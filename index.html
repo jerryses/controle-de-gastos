@@ -1,0 +1,3756 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Controle de Gastos</title>
+  
+  
+  <script>
+  // === CONECTOR DA API (SUBSTITUI O GOOGLE.SCRIPT.RUN) ===
+  const API_URL = "https://script.google.com/macros/s/AKfycbzHGjCQVDrjDYnZ-glnbS3Z96K_13k1LEmu3O7voMsFEzOIqKfHcrxiqF1SdmFj43CX/exec";
+
+  window.google = {
+    script: {
+      run: (function() {
+        function Runner(successHandler, failureHandler) {
+          this.withSuccessHandler = function(cb) { return new Runner(cb, failureHandler); };
+          this.withFailureHandler = function(cb) { return new Runner(successHandler, cb); };
+          
+          return new Proxy(this, {
+            get(target, prop) {
+              if (prop in target) return target[prop];
+              
+              // Intercepta a chamada da função (ex: salvarGasto)
+              return function(...args) {
+                fetch(API_URL, {
+                  method: 'POST',
+                  // text/plain burla as restrições de CORS do Apps Script
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify({ action: prop, args: args })
+                })
+                .then(res => res.json())
+                .then(data => {
+                  if (data.sucesso && successHandler) successHandler(data.retorno);
+                  else if (!data.sucesso && failureHandler) failureHandler(data.erro);
+                  else if (!data.sucesso) console.error("Erro no Apps Script:", data.erro);
+                })
+                .catch(err => {
+                  if (failureHandler) failureHandler(err);
+                  else console.error("Erro no Fetch:", err);
+                });
+              };
+            }
+          });
+        }
+        return new Runner(null, null);
+      })()
+    }
+  };
+</script>
+  
+  
+  
+  <script>
+    // Detecta se o celular está no modo dark e aplica no Bootstrap
+    function atualizarTema() {
+      const tema = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', tema);
+    }
+    atualizarTema(); // Roda ao abrir
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', atualizarTema); // Ouve mudanças
+  </script>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    :root { color-scheme: light dark; }
+    body { background-color: var(--bs-body-bg); padding-top: 75px; }
+    
+    .offcanvas { max-width: 70vw; }
+
+    
+
+    /* Chips e Botões de Alto Contraste */
+    .chip-group { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .chip-group .btn, .btn-divisao { 
+      border-radius: 20px; padding: 0.4rem 0.9rem; font-size: 0.9rem; 
+      border: 1px solid var(--bs-border-color); color: var(--bs-body-color);
+    }
+    .btn-check:checked + .btn { 
+      background-color: #0d6efd !important; 
+      border-color: #0d6efd !important; 
+      color: white !important; 
+      font-weight: bold;
+    }
+
+    .bg-pink { background-color: #e83e8c !important; color: white !important; }
+    .border-card { 
+      border: 1px solid var(--bs-border-color-translucent); 
+      transition: 0.2s; 
+      cursor: pointer; 
+      user-select: none; 
+      -webkit-user-select: none; 
+      -webkit-tap-highlight-color: transparent; 
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .border-card:hover { 
+        border-color: #0d6efd; 
+        box-shadow: 0 4px 12px rgba(13,110,253,0.15) !important; 
+      }
+    }
+    .border-card:active {
+      transform: scale(0.985);
+      opacity: 0.9;
+    }
+
+    /* Feedback visual de clique no botão flutuante */
+    #fabAdd:active {
+      transform: scale(0.85);
+      opacity: 0.8;
+      transition: all 0.1s ease-out;
+    }
+
+    /* Campo Expansível Melhorado */
+    .desc-wrapper { position: relative; min-height: 38px; z-index: 10; }
+    .desc-textarea {
+      position: absolute; top: 0; left: 0; width: 100%; height: 38px; resize: none;
+      transition: all 0.2s; overflow: hidden; white-space: nowrap; border-radius: 6px;
+    }
+    .desc-textarea:focus {
+      width: calc(200% + 15px); /* Expande para o lado cobrindo o campo de valor */
+      height: 120px; /* Expande para baixo */
+      white-space: normal; /* Permite quebrar linha para ler textos longos */
+      overflow-y: auto; /* Cria barra de rolagem se o texto for gigante */
+      z-index: 1050; 
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .scroll-horizontal { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .scroll-horizontal::-webkit-scrollbar { display: none; }
+  </style>
+
+  
+</head>
+<body>
+
+  
+
+  <!-- NAVBAR ÚNICA -->
+  <nav class="navbar fixed-top shadow-sm flex-nowrap align-items-center px-2 py-2" style="background-color: var(--bs-body-bg); border-bottom: 1px solid var(--bs-border-color); height: 65px;">
+    
+    <button class="navbar-toggler border-0 p-1 me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu">
+      <i class="bi bi-list fs-1 text-primary"></i>
+    </button>
+
+    <!-- NOVO: Título da Aba e Emoji do Usuário Ativo (Aparece nos menus normais) -->
+    <div id="navTituloArea" class="d-flex justify-content-between align-items-center w-100 pe-2">
+      <span id="tituloAbaAtual" class="fw-bold fs-5 text-truncate text-secondary"><i class="bi bi-tags me-2 text-warning"></i>Pendências</span>
+      <div class="d-flex align-items-center gap-2">
+        <span id="saldoTopoNav" class="fw-bold fs-6 d-none" style="letter-spacing: -0.5px;"></span>
+        <span id="emojiUsuarioAtivo" class="fs-3" style="cursor: pointer; line-height: 1;"
+data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleção de usuário">👥</span>
+      </div>
+    </div>
+    
+    
+  </nav>
+
+  <!-- SIDEBAR -->
+  <div class="offcanvas offcanvas-start" tabindex="-1" id="offcanvasMenu">
+    <div class="offcanvas-header border-bottom flex-column align-items-start pb-2 pt-2">
+      <!-- NOVO: Chips de Filtro Global de Usuário -->
+      <div class="w-100">
+        <label class="small fw-bold text-muted mb-1" style="font-size: 0.75rem;">VISUALIZAÇÃO PENDÊNCIAS:</label>
+        <div class="d-flex gap-2 w-100">
+          <input type="radio" class="btn-check" name="filtroCatUser" id="filtroCatTodos" value="todos" checked onchange="filtrarCategorizar(this.value)">
+          <label class="btn btn-outline-secondary rounded-3 flex-fill fs-3 py-0 shadow-sm" for="filtroCatTodos" title="Todos">👥</label>
+
+          <input type="radio" class="btn-check" name="filtroCatUser" id="filtroCatJerry" value="Jerry" onchange="filtrarCategorizar(this.value)">
+          <label class="btn btn-outline-secondary rounded-3 flex-fill fs-3 py-0 shadow-sm" for="filtroCatJerry" title="Jerry">👦🏻</label>
+
+          <input type="radio" class="btn-check" name="filtroCatUser" id="filtroCatLarissa" value="Larissa" onchange="filtrarCategorizar(this.value)">
+          <label class="btn btn-outline-secondary rounded-3 flex-fill fs-3 py-0 shadow-sm" for="filtroCatLarissa" title="Larissa">👱🏻‍♀️</label>
+        </div>
+      </div>
+    </div>
+    <div class="offcanvas-body p-0">
+      <div class="list-group list-group-flush mt-1">
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('categorizar')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-tags me-3 text-warning"></i> Pendências
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('usoCarro')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-car-front me-3 text-secondary"></i> Uso do Carro
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('dashboard')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-journal-text me-3 text-success"></i> Últimas
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('ultimasEditadas')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-clock-history me-3 text-info"></i> Edições
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('despesasJerry')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-person-fill me-3 text-primary"></i> Jerry
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('despesasLarissa')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-person-fill me-3" style="color: #e83e8c;"></i> Larissa
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('relatorio')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-graph-up me-3 text-success"></i> Relatórios
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('pesquisar')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-search me-3 text-info"></i> Pesquisar
+        </a>
+        <a href="#" class="list-group-item list-group-item-action fs-5" style="padding-top: 11px; padding-bottom: 11px;" onclick="switchTab('lixeira')" data-bs-dismiss="offcanvas">
+          <i class="bi bi-trash me-3 text-danger"></i> Lixeira
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: LANÇAR GASTO -->
+  <div class="container d-none" id="view-lancar">
+    <div id="alertaEdicao" class="d-flex justify-content-between align-items-center py-2 px-3 mb-3 rounded-3 shadow-sm border" style="background-color: #fff3cd !important; border-color: #ffe69c !important;">
+      <span id="textoAlertaTopo" class="fw-bold fs-6" style="color: #212529 !important;"><i class="bi bi-plus-circle me-1"></i>Novo Gasto</span>
+      <div class="d-flex gap-4 align-items-center">
+        <button type="button" class="btn btn-sm btn-warning fw-bold rounded-circle p-0 shadow-sm d-none text-dark d-flex align-items-center justify-content-center" id="btnDesmembrar" onclick="abrirModalDesmembrar()" title="Desmembrar Gasto" style="width: 38px; height: 38px;">
+          <i class="bi bi-layout-split fs-5"></i>
+        </button>
+        <button type="button" class="btn btn-sm btn-danger fw-bold rounded-circle p-0 shadow-sm d-flex align-items-center justify-content-center" id="btnExcluir" onclick="confirmarExclusao()" title="Excluir Gasto" style="width: 38px; height: 38px;">
+          <i class="bi bi-trash fs-5"></i>
+        </button>
+        <button type="button" id="btnCancelarEdicao" class="btn btn-sm btn-secondary fw-bold rounded-circle p-0 shadow-sm d-flex align-items-center justify-content-center" onclick="cancelarEdicao()" title="Cancelar" style="width: 38px; height: 38px;">
+          <i class="bi bi-x-circle fs-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <form id="formGasto">
+
+      <!-- DATA E REFERÊNCIA DE GASTOS -->
+      <div class="row mb-4 position-relative">
+        <div class="col-6">
+          <label class="form-label text-muted fw-bold mb-1 small">DESCRIÇÃO</label>
+          <div class="desc-wrapper">
+            <textarea class="form-control fw-bold desc-textarea border-primary" id="descricao" required placeholder="Texto..." autocomplete="off" onfocus="this.setSelectionRange(0, 0)"></textarea>
+          </div>
+        </div>
+        <div class="col-6">
+          <label class="form-label text-primary fw-bold mb-1 small">VALOR (R$)</label>
+          <input type="text" inputmode="decimal" class="form-control fw-bold text-primary" id="valorTotal" required placeholder="0,00" autocomplete="new-password" onfocus="this.select()">
+        </div>
+      </div>
+
+      <div class="row mb-4">
+        <div class="col-4 pe-1 d-flex flex-column justify-content-between">
+          <div class="d-flex flex-column gap-1">
+            <label class="form-label text-muted fw-bold mb-0 small">DATA / HORA</label>
+            <input type="date" class="form-control fw-bold text-danger text-center px-1" style="height: 38px; font-size: 0.85rem;" id="dataCustom" required onchange="document.getElementById('horaCustom').focus()">
+            <input type="time" class="form-control fw-bold text-danger text-center px-1" style="height: 38px; font-size: 0.85rem;" id="horaCustom" onchange="document.getElementById('descricao').focus()">
+          </div>
+        </div>
+        <div class="col-8 ps-1">
+          <label class="form-label text-muted fw-bold mb-2 text-truncate w-100 small" id="tituloReferencia">ÚLTIMOS GASTOS</label>
+          <div id="listaReferencia" class="overflow-auto px-2 py-1" style="height: 100px; font-size: 0.7rem; line-height: 1.3; background-color: rgba(128,128,128,0.1); border-radius: 6px;">
+            <div class="fst-italic text-muted mt-1">Sincronizando...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cotas Manuais e Divisão -->
+      <div class="mb-4" id="boxCustom">
+        <label class="form-label text-muted fw-bold mb-2 small">DIVISÃO DO GASTO (R$)</label>
+        
+        <div class="d-flex justify-content-between align-items-end gap-1">
+          
+          <div class="d-flex flex-column" style="flex: 1; min-width: 0;">
+            <label class="small text-muted fw-bold mb-1">Jerry</label>
+            <div class="d-flex gap-1">
+              <input type="text" inputmode="decimal" class="form-control fw-bold text-primary rounded-3 px-1 text-center" id="cotaJerry" autocomplete="new-password" onfocus="focarCota(this)">
+              <button class="btn btn-outline-primary rounded-3 px-1 shadow-sm" type="button" onclick="setCotaTotal('cotaJerry')" tabindex="-1">100%</button>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-center px-1 pb-0">
+            <button type="button" class="btn btn-outline-secondary rounded-3 fw-bold shadow-sm px-2" onclick="dividirMeioAMeio()" tabindex="-1" style="font-size: 0.85rem; height: 38px;">
+              50%
+            </button>
+          </div>
+
+          <div class="d-flex flex-column" style="flex: 1; min-width: 0;">
+            <label class="small text-muted fw-bold mb-1">Larissa</label>
+            <div class="d-flex gap-1">
+              <input type="text" inputmode="decimal" class="form-control fw-bold text-pink rounded-3 px-1 text-center" id="cotaLarissa" autocomplete="new-password" onfocus="focarCota(this)">
+              <button class="btn btn-outline-danger rounded-3 px-1 shadow-sm" style="color: #e83e8c; border-color: #e83e8c;" type="button" onclick="setCotaTotal('cotaLarissa')" tabindex="-1">100%</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CATEGORIA -->
+      <div class="mb-4" id="ancoraCategoria" style="scroll-margin-top: 80px;">
+        <label class="form-label text-muted fw-bold mb-2 small">CATEGORIA</label>
+        <div class="chip-group" id="containerCategorias"></div>
+      </div>
+
+      <!-- FORMA DE PAGAMENTO -->
+      <div class="mb-4" id="secaoFormaPagamento">
+        <label class="form-label text-muted fw-bold mb-2 small">FORMA DE PAGAMENTO</label>
+        <div class="chip-group">
+          <input type="radio" class="btn-check" name="forma" id="fCredito" value="credito nubank" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fCredito">💳 crédito nu</label>
+          <input type="radio" class="btn-check" name="forma" id="fConta" value="conta nubank (pix debito boleto transferencia etc)" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fConta">🏦 conta/pix nu</label>
+          <input type="radio" class="btn-check" name="forma" id="fCreditoBB" value="credito BB" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fCreditoBB">💳 crédito bb</label>
+          <input type="radio" class="btn-check" name="forma" id="fContaBB" value="conta BB (pix debito boleto transferencia etc)" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fContaBB">🏦 conta/pix bb</label>
+          <input type="radio" class="btn-check" name="forma" id="fCalculo" value="calculo" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fCalculo">🧮 calculo</label>
+          <input type="radio" class="btn-check" name="forma" id="fDinheiro" value="dinheiro / outros" required onchange="atualizarListaReferencia()">
+          <label class="btn btn-outline-secondary" for="fDinheiro">💵 dinheiro/outros</label>
+        </div>
+      </div>
+
+      <!-- PAGADOR -->
+      <div class="mb-4" id="secaoPagador">
+        <label class="form-label text-muted fw-bold mb-2 small">QUEM PAGOU (OU RECEBEU)?</label>
+        <div class="chip-group">
+          <input type="radio" class="btn-check" name="pagadorRadio" id="pagadorJerry" value="Jerry" required onchange="calcularPreview(); atualizarListaReferencia();">
+          <label class="btn btn-outline-secondary" for="pagadorJerry">👦🏻 Jerry</label>
+          
+          <input type="radio" class="btn-check" name="pagadorRadio" id="pagadorLarissa" value="Larissa" required onchange="calcularPreview(); atualizarListaReferencia();">
+          <label class="btn btn-outline-secondary" for="pagadorLarissa">👱🏻‍♀️ Larissa</label>
+        </div>
+      </div>
+
+      <div class="mb-4" id="secaoTipoTransacao">
+        <label class="form-label text-muted fw-bold mb-2 small">É GASTO OU RESSARCIMENTO?</label>
+        <div class="chip-group">
+          <input type="radio" class="btn-check" name="tipoTransacao" id="tipoGasto" value="gasto" checked onchange="aplicarTipoTransacao()">
+          <label class="btn btn-outline-secondary shadow-sm" for="tipoGasto">💸 Gasto</label>
+          
+          <input type="radio" class="btn-check" name="tipoTransacao" id="tipoRessarcimento" value="ressarcimento" onchange="aplicarTipoTransacao()">
+          <label class="btn btn-outline-success shadow-sm" for="tipoRessarcimento">🤑 Ressarcimento</label>
+        </div>
+      </div>
+      
+      <!-- RESUMO -->
+      <div class="preview-box mb-4 text-center">
+        <div id="previewTexto" class="fw-bold fs-5">Preencha o valor para ver o acerto.</div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fs-5 fw-bold mb-3 shadow-sm" id="btnSalvar">
+        <i class="bi bi-save"></i> <span id="textoBtnSalvar">CONFIRMAR GASTO</span>
+      </button>
+
+      <!-- NOVO: Botão discreto para copiar ID -->
+      <div id="boxCopiarId" class="text-center mb-4 d-none">
+        <button type="button" id="btnCopiarId" class="btn btn-sm rounded-pill border border-secondary text-secondary fw-bold px-3 shadow-sm" onclick="copiarIdGasto()">
+          <i class="bi bi-clipboard"></i> Copiar ID do Gasto
+        </button>
+      </div>
+
+      <div id="statusMsg" class="mt-2 mb-5 text-center fw-bold"></div>
+    </form>
+  </div>
+
+  <!-- VIEW: CATEGORIZAR -->
+  <div class="container" id="view-categorizar">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="text-muted fw-bold m-0"><i class="bi bi-exclamation-circle text-warning me-1"></i> CATEGORIA OU DIVISÃO</h6>
+      <small class="text-primary fw-bold" style="cursor:pointer;" onclick="carregarDashboard()"><i class="bi bi-arrow-clockwise"></i> Atualizar</small>
+    </div>
+    
+    <div id="listaCategorizar" class="mb-5 pb-4">
+      <div class="text-center text-muted">Carregando...</div>
+    </div>
+  </div>
+
+  <!-- VIEW: DASHBOARD -->
+  <div class="container d-none" id="view-dashboard">
+    <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
+      <h6 class="text-muted fw-bold m-0">ÚLTIMAS DESPESAS ATÉ HJ</h6>
+      <small class="text-primary fw-bold" style="cursor:pointer;" onclick="carregarDashboard()"><i class="bi bi-arrow-clockwise"></i> Atualizar</small>
+    </div>
+    
+    <div id="listaHistorico" class="mb-5 pb-4">
+      <div class="text-center">Carregando...</div>
+    </div>
+  </div>
+
+  <!-- VIEW: ÚLTIMAS EDITADAS -->
+  <div class="container d-none" id="view-ultimasEditadas">
+    <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
+      <h6 class="text-muted fw-bold m-0"><i class="bi bi-clock-history text-info me-1"></i> ÚLTIMAS EDIÇÕES</h6>
+      <small class="text-primary fw-bold" style="cursor:pointer;" onclick="carregarDashboard()"><i class="bi bi-arrow-clockwise"></i> Atualizar</small>
+    </div>
+    
+    <div id="listaUltimasEditadas" class="mb-5 pb-4">
+      <div class="text-center">Carregando...</div>
+    </div>
+  </div>
+
+
+  <!-- VIEW: DESPESAS JERRY -->
+  <div class="container d-none" id="view-despesasJerry">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="text-muted fw-bold m-0"><i class="bi bi-person-fill text-primary me-1"></i> DESPESAS JERRY</h6>
+    </div>
+    <div id="listaDespesasJerry" class="mb-5 pb-4">
+      <div class="text-center text-muted fst-italic"><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>
+    </div>
+  </div>
+
+  <!-- VIEW: DESPESAS LARISSA -->
+  <div class="container d-none" id="view-despesasLarissa">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="text-muted fw-bold m-0"><i class="bi bi-person-fill me-1" style="color: #e83e8c;"></i> DESPESAS LARISSA</h6>
+    </div>
+    <div id="listaDespesasLarissa" class="mb-5 pb-4">
+      <div class="text-center text-muted fst-italic"><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>
+    </div>
+  </div>
+
+
+  <!-- VIEWS -->
+  <div class="container d-none" id="view-usoCarro">
+    <div class="card shadow-sm border-0 rounded-4 mb-4 mt-2">
+      <div class="card-body p-3">
+        <h6 class="fw-bold text-muted mb-3"><i class="bi bi-car-front text-secondary me-2"></i> REGISTRO DE USO DO CARRO</h6>
+        
+        <form id="formUsoCarro">
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold mb-1 small">VEÍCULO</label>
+            <div class="chip-group">
+              <input type="radio" class="btn-check" name="carroSelecionado" id="carroPulse" value="Pulse" required>
+              <label class="btn btn-outline-secondary" for="carroPulse">🚙 Pulse</label>
+              <input type="radio" class="btn-check" name="carroSelecionado" id="carroStrada" value="Strada" required>
+              <label class="btn btn-outline-secondary" for="carroStrada">🛻 Strada</label>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold mb-1 small">DESCRIÇÃO (DESTINO/MOTIVO)</label>
+            <input type="text" class="form-control fw-bold border-primary" id="usoDescricao" required placeholder="Ex: Viagem SJC" autocomplete="off">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold mb-2 small">CATEGORIA DO GASTO</label>
+            <div class="chip-group" id="containerCategoriasUsoCarro"></div>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label text-muted fw-bold mb-1 small">KM TRIP B</label>
+              <input type="text" inputmode="decimal" class="form-control fw-bold text-center" id="usoKmTripB" required placeholder="0,0" autocomplete="off">
+            </div>
+            <div class="col-6">
+              <label class="form-label text-muted fw-bold mb-1 small">KM TOTAL</label>
+              <input type="text" inputmode="numeric" class="form-control fw-bold text-center" id="usoKmTotal" required placeholder="Ex: 35120" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="row g-2 mb-4">
+            <div class="col-6">
+              <label class="form-label text-muted fw-bold mb-1 small">CONSUMO (KM/L)</label>
+              <input type="text" inputmode="decimal" class="form-control fw-bold text-center" id="usoConsumo" required placeholder="0,0" autocomplete="off">
+            </div>
+            <div class="col-6">
+              <label class="form-label text-muted fw-bold mb-1 small">PREÇO COMB. (R$)</label>
+              <input type="text" inputmode="decimal" class="form-control fw-bold text-center" id="usoPrecoComb" required placeholder="0,00" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label text-muted fw-bold mb-2 small">DEDUZIR DOS CRÉDITOS DE QUEM?</label>
+            <div class="chip-group">
+              <input type="radio" class="btn-check" name="usoPagadorRadio" id="usoPagadorJerry" value="Jerry" required>
+              <label class="btn btn-outline-secondary" for="usoPagadorJerry">👦🏻 Jerry</label>
+              
+              <input type="radio" class="btn-check" name="usoPagadorRadio" id="usoPagadorLarissa" value="Larissa" required>
+              <label class="btn btn-outline-secondary" for="usoPagadorLarissa">👱🏻‍♀️ Larissa</label>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label text-muted fw-bold mb-2 small">COMO DIVIDIR? (Opcional)</label>
+            <div class="chip-group">
+              <input type="radio" class="btn-check" name="usoDivisao" id="usoDivPendente" value="pendente" checked>
+              <label class="btn btn-outline-secondary" for="usoDivPendente">⏳ Deixar Pendente</label>
+              
+              <input type="radio" class="btn-check" name="usoDivisao" id="usoDiv5050" value="50_50">
+              <label class="btn btn-outline-secondary" for="usoDiv5050">⚖️ 50% / 50%</label>
+              
+              <input type="radio" class="btn-check" name="usoDivisao" id="usoDiv100J" value="100_jerry">
+              <label class="btn btn-outline-secondary" for="usoDiv100J">👦🏻 100% Jerry</label>
+              
+              <input type="radio" class="btn-check" name="usoDivisao" id="usoDiv100L" value="100_larissa">
+              <label class="btn btn-outline-secondary" for="usoDiv100L">👱🏻‍♀️ 100% Lari</label>
+            </div>
+          </div>
+
+          <div id="boxConfirmacaoUsoCarro" class="d-none alert alert-warning mb-3">
+             <div id="textoConfirmacaoUsoCarro" class="fw-bold mb-2 small"></div>
+             <button type="button" class="btn btn-sm btn-danger fw-bold w-100 py-2 shadow-sm" id="btnForcarSalvarUsoCarro">
+               SALVAR MESMO ASSIM
+             </button>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fs-5 fw-bold mb-3 shadow-sm" id="btnSalvarUsoCarro">
+            <i class="bi bi-save"></i> SALVAR USO DO CARRO
+          </button>
+          
+          <div id="statusMsgUsoCarro" class="mt-2 mb-2 text-center fw-bold"></div>
+        </form>
+
+        <div class="row g-2 mb-3 mt-4" id="boxCreditosCombustivel">
+          <div class="col-6">
+            <div class="card shadow-sm border-0 rounded-3 bg-primary-subtle text-center p-2">
+              <small class="fw-bold text-primary" style="font-size: 0.65rem;">CRÉDITO JERRY (POSTO)</small>
+              <span class="fw-bold fs-5 text-primary lh-1 mt-1" id="creditoJerryDisplay">R$ 0,00</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="card shadow-sm border-0 rounded-3 text-center p-2" style="background-color: #f8d7da;">
+              <small class="fw-bold" style="font-size: 0.65rem; color: #e83e8c;">CRÉDITO LARI (POSTO)</small>
+              <span class="fw-bold fs-5 lh-1 mt-1" style="color: #e83e8c;" id="creditoLarissaDisplay">R$ 0,00</span>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-outline-warning w-100 fw-bold shadow-sm mb-4" style="font-size: 0.85rem;" onclick="zerarCreditosCombustivel(event)">
+          <i class="bi bi-arrow-clockwise"></i> ZERAR CRÉDITOS E DIVIDIR DISCREPÂNCIA
+        </button>
+
+        <hr class="mt-4 mb-3">
+        <h6 class="text-muted fw-bold mb-2 small"><i class="bi bi-clock-history me-1"></i> ÚLTIMOS REGISTROS DO VEÍCULO</h6>
+        <div id="listaUltimosUsosCarro">
+          <div class="text-center text-muted fst-italic small">Selecione um veículo para ver o histórico.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW: PESQUISAR -->
+
+  <div class="container d-none" id="view-lixeira">
+    <div class="d-flex justify-content-between align-items-center mb-3 mt-2">
+      <h6 class="text-muted fw-bold m-0"><i class="bi bi-trash text-danger me-1"></i> LIXEIRA</h6>
+      <small class="text-primary fw-bold" style="cursor:pointer;" onclick="carregarLixeira()"><i class="bi bi-arrow-clockwise"></i> Atualizar</small>
+    </div>
+
+    <div class="mb-3">
+      <label class="small text-muted fw-bold d-block mb-1">ORDENAR POR:</label>
+      <div class="chip-group" role="group">
+        <input type="radio" class="btn-check" name="ordemLixeira" id="ordemExclusao" value="exclusao" checked onchange="alterarOrdemLixeira(this.value)">
+        <label class="btn btn-outline-secondary rounded-pill px-3 fw-bold" for="ordemExclusao">🗑️ Data de Exclusão</label>
+
+        <input type="radio" class="btn-check" name="ordemLixeira" id="ordemGasto" value="gasto" onchange="alterarOrdemLixeira(this.value)">
+        <label class="btn btn-outline-secondary rounded-pill px-3 fw-bold" for="ordemGasto">📅 Data do Gasto</label>
+      </div>
+    </div>
+    
+    <div id="listaLixeira" class="mb-5 pb-4">
+      <div class="text-center text-muted fst-italic">Carregando lixeira...</div>
+    </div>
+  </div>
+  <div class="container d-none" id="view-pesquisar">
+    <div class="card shadow-sm border-0 rounded-4 mb-4 mt-2">
+      <div class="card-body p-3">
+        <h6 class="fw-bold text-muted mb-3"><i class="bi bi-search text-info me-2"></i> PESQUISA AVANÇADA</h6>
+        
+        <!-- SEMPRE VISÍVEIS -->
+        <div class="mb-3">
+          <input type="text" id="pesqDescricao" class="form-control border-info" placeholder="Buscar na descrição..." autocomplete="off">
+        </div>
+        
+        <div class="form-check ms-1 mb-3">
+          <input class="form-check-input" type="checkbox" id="pesqIncluirLixeira">
+          <label class="form-check-label small fw-bold text-muted" for="pesqIncluirLixeira">
+            Incluir itens da lixeira nos resultados
+          </label>
+        </div>
+
+        <!-- ACORDEÃO (FILTROS OCULTOS) -->
+        <div class="accordion mb-3" id="accordionFiltrosPesq">
+          
+          <!-- Filtro: INCLUIR Categorias -->
+          <div class="accordion-item mb-2 border rounded-3 overflow-hidden shadow-sm">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed fw-bold text-muted small py-2 shadow-none bg-body" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCatInc">
+                <i class="bi bi-tags text-success me-2"></i> Alguma das Categorias (OR)
+              </button>
+            </h2>
+            <div id="collapseCatInc" class="accordion-collapse collapse">
+              <div class="accordion-body p-2 bg-body-tertiary border-top">
+                <div class="chip-group" id="containerPesqCatInc"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtro: EXCLUIR Categorias -->
+          <div class="accordion-item mb-2 border rounded-3 overflow-hidden shadow-sm">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed fw-bold text-muted small py-2 shadow-none bg-body" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCatExc">
+                <i class="bi bi-x-circle text-danger me-2"></i> Nenhuma das Categorias (NOT)
+              </button>
+            </h2>
+            <div id="collapseCatExc" class="accordion-collapse collapse">
+              <div class="accordion-body p-2 bg-body-tertiary border-top">
+                <div class="chip-group" id="containerPesqCatExc"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtro: PAGADORES E COTAS -->
+          <div class="accordion-item mb-2 border rounded-3 overflow-hidden shadow-sm">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed fw-bold text-muted small py-2 shadow-none bg-body" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePagador">
+                <i class="bi bi-person-bounding-box text-primary me-2"></i> Pagadores e Cotas
+              </button>
+            </h2>
+            <div id="collapsePagador" class="accordion-collapse collapse">
+              <div class="accordion-body p-2 bg-body-tertiary border-top">
+                <div class="row g-2 mb-3 mt-1">
+                  <div class="col-6">
+                    <label class="small text-muted fw-bold">Pagador é:</label>
+                    <select id="pesqPagador" class="form-select form-select-sm fw-bold">
+                      <option value="">Qualquer</option>
+                      <option value="Jerry">👦🏻 Jerry</option>
+                      <option value="Larissa">👱🏻‍♀️ Larissa</option>
+                    </select>
+                  </div>
+                  <div class="col-6">
+                    <label class="small text-muted fw-bold text-danger">Pagador NÃO é:</label>
+                    <select id="pesqNaoPagador" class="form-select form-select-sm fw-bold border-danger-subtle">
+                      <option value="">Qualquer</option>
+                      <option value="Jerry">👦🏻 Jerry</option>
+                      <option value="Larissa">👱🏻‍♀️ Larissa</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" id="pesqCotaJerry">
+                  <label class="form-check-label small fw-bold text-primary" for="pesqCotaJerry">Tem cota positiva para Jerry</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="pesqCotaLari">
+                  <label class="form-check-label small fw-bold text-pink" for="pesqCotaLari">Tem cota positiva para Larissa</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filtro: DATAS -->
+          <div class="accordion-item mb-2 border rounded-3 overflow-hidden shadow-sm">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed fw-bold text-muted small py-2 shadow-none bg-body" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDatas">
+                <i class="bi bi-calendar-range text-secondary me-2"></i> Período Específico
+              </button>
+            </h2>
+            <div id="collapseDatas" class="accordion-collapse collapse">
+              <div class="accordion-body p-2 bg-body-tertiary border-top">
+                <div class="row g-2 mt-1">
+                  <div class="col-6">
+                    <label class="small text-muted fw-bold ms-1 mb-1">Data Início</label>
+                    <input type="date" id="pesqDataInicio" class="form-control text-center px-1" style="font-size: 0.85rem;">
+                  </div>
+                  <div class="col-6">
+                    <label class="small text-muted fw-bold ms-1 mb-1">Data Fim</label>
+                    <input type="date" id="pesqDataFim" class="form-control text-center px-1" style="font-size: 0.85rem;">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div> <!-- Fim do Acordeão -->
+        
+        <button class="btn btn-info w-100 rounded-pill text-white fw-bold py-3 shadow-sm mt-2" id="btnFazerPesquisa" onclick="executarPesquisa()">
+          <i class="bi bi-search"></i> BUSCAR GASTOS
+        </button>
+      </div>
+    </div>
+    
+    <div id="statusPesquisa" class="text-center text-muted fw-bold mb-3 d-none"></div>
+    <div id="listaPesquisa" class="mb-5 pb-4">
+      <div class="text-center text-muted fst-italic">Os resultados aparecerão aqui.</div>
+    </div>
+  </div>
+
+  <!-- VIEW: RELATORIOS -->
+  <div class="container d-none" id="view-relatorio">
+    
+    <!-- Gráfico no Topo -->
+    <div class="card shadow-sm border-0 rounded-4 mb-3 mt-2 bg-body">
+      <div class="card-body p-2">
+        <canvas id="graficoRelatorio" style="height: 370px; width: 100%;"></canvas>
+      </div>
+    </div>
+
+    <!-- Cards Numéricos (Abaixo do gráfico) -->
+    <div class="row g-2 mb-3 text-center">
+      <div class="col-6">
+        <div class="card shadow-sm border-0 rounded-4 bg-primary-subtle h-100">
+          <div class="card-body p-2 d-flex flex-column justify-content-center">
+            <small class="text-primary fw-bold d-block lh-1 mb-1" style="font-size: 0.7rem;">GASTO ACUMULADO</small>
+            <span class="fs-5 fw-bold text-primary lh-1" id="relTotalGasto">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="card shadow-sm border-0 rounded-4 bg-secondary-subtle h-100" id="cardStatusRel">
+          <div class="card-body p-2 d-flex flex-column justify-content-center">
+            <small class="text-secondary fw-bold d-block lh-1 mb-1" id="relStatusLabel" style="font-size: 0.7rem;">STATUS DA META</small>
+            <span class="fs-6 fw-bold text-secondary lh-1" id="relStatusMeta">Sem meta</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chips de Pré-configuração -->
+    <div class="mb-3 mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <label class="small text-muted fw-bold mb-0">ATALHOS DO USUÁRIO:</label>
+        <button type="button" class="btn btn-sm btn-outline-primary fw-bold p-1 px-2" onclick="salvarAtalhoAtual(this)">+ Salvar Filtro Atual</button>
+      </div>
+      <div class="chip-group scroll-horizontal pb-1" id="containerPresetsRelatorio">
+        <div class="text-muted small fst-italic">Carregando atalhos...</div>
+      </div>
+    </div>
+
+    <!-- Painel de Controle (No final) -->
+    <div class="card shadow-sm border-0 rounded-4 mb-5 pb-2 bg-body">
+      <div class="card-body p-3">
+        <h6 class="fw-bold text-muted mb-3"><i class="bi bi-sliders me-2 text-primary"></i> PAINEL DE CONTROLE</h6>
+        
+        <div class="mb-3">
+          <label class="small text-muted fw-bold mb-1">Usuário (Leva em conta a cota exata da pessoa)</label>
+          <select id="relUsuario" class="form-select form-select-sm fw-bold" onchange="atualizarRelatorio()">
+            <option value="todos">👥 Todos (Cota Jerry + Cota Larissa)</option>
+            <option value="Jerry">👦🏻 Jerry (Apenas Cota do Jerry)</option>
+            <option value="Larissa">👱🏻‍♀️ Larissa (Apenas Cota da Larissa)</option>
+          </select>
+        </div>
+        
+        <div class="row g-2 mb-3">
+          <div class="col-12 mb-2">
+            <label class="small text-muted fw-bold ms-1 mb-1">Início (Data e Hora)</label>
+            <div class="d-flex gap-1">
+              <input type="date" id="relDtInicio" class="form-control px-1 text-center" style="font-size: 0.85rem;" onchange="atualizarRelatorio()">
+              <input type="time" id="relHoraInicio" class="form-control px-1 text-center" style="font-size: 0.85rem;" value="00:01" onchange="atualizarRelatorio()">
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="small text-muted fw-bold ms-1 mb-1">Fim (Data e Hora)</label>
+            <div class="d-flex gap-1">
+              <input type="date" id="relDtFim" class="form-control px-1 text-center" style="font-size: 0.85rem;" onchange="atualizarRelatorio()">
+              <input type="time" id="relHoraFim" class="form-control px-1 text-center" style="font-size: 0.85rem;" value="23:59" onchange="atualizarRelatorio()">
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="small text-muted fw-bold mb-1">Categoria (Filtro)</label>
+          <div class="chip-group" id="containerCategoriasRelatorio"></div>
+        </div>
+
+        <div class="mb-2">
+          <label class="small text-muted fw-bold mb-1">Meta / Target de Gasto (R$)</label>
+          <input type="number" id="relTarget" class="form-control form-control-sm fw-bold text-danger" placeholder="Opcional: Ex 1500" onchange="atualizarRelatorio()" onkeyup="atualizarRelatorio()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTÕES DE SELEÇÃO EM LOTE (ESQUERDA) -->
+  <div id="containerFabsLote" class="d-none" style="position: fixed; bottom: 25px; left: 25px; z-index: 1040; display: flex; flex-direction: column; gap: 10px;">
+    <button class="btn btn-secondary shadow d-flex align-items-center justify-content-center px-3" 
+            style="border-radius: 20px; height: 35px; opacity: 0.75; font-size: 0.85rem;" 
+            onclick="cancelarSelecaoLote()">
+      <i class="bi bi-x-lg me-1"></i> <span class="fw-bold">Desfazer</span>
+    </button>
+    
+    <button class="btn btn-warning shadow d-flex align-items-center justify-content-center px-3 gap-1" 
+            style="border-radius: 25px; height: 45px; opacity: 0.85; color: #000; font-size: 0.95rem;" 
+            onclick="abrirPainelLote()">
+      <i class="bi bi-pencil-square"></i> <span class="fw-bold">EDITAR (<span id="qtdFabLote">0</span>)</span>
+    </button>
+  </div>
+
+  <button id="fabAdd" class="btn btn-primary shadow-lg d-flex align-items-center justify-content-center" 
+          style="position: fixed; bottom: 25px; right: 25px; width: 65px; height: 65px; border-radius: 50%; z-index: 1040;" 
+          onclick="posicaoScroll = window.scrollY; idUnicoEdicao = null; document.getElementById('formGasto').reset(); aplicarPadroesUI(); switchTab('lancar')">
+    <i class="bi bi-plus" style="font-size: 2.5rem; line-height: 0;"></i>
+  </button>
+
+
+  <div id="barraAcoesEmLote" class="fixed-bottom bg-body-tertiary border-top shadow-lg p-3 d-none" style="z-index: 1070; max-height: 85vh; overflow-y: auto;">
+    <div class="container p-0">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="fw-bold fs-6 text-primary">
+          <i class="bi bi-check2-square me-1"></i> <span class="badge bg-primary rounded-pill me-1" id="qtdSelecionadosLote">0</span> selecionado(s)
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill fw-bold" onclick="cancelarSelecaoLote()">
+          <i class="bi bi-x-lg"></i> Cancelar
+        </button>
+      </div>
+
+      <div class="row g-2 mb-2">
+        <div class="col-12 col-md-6">
+          <label class="form-label text-muted fw-bold mb-1 small">CATEGORIA EM LOTE</label>
+          <select id="loteCategoria" class="form-select form-select-sm fw-bold">
+            <option value="">-- Não alterar --</option>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label text-muted fw-bold mb-1 small">DIVISÃO DE COTA EM LOTE</label>
+          <select id="loteDivisao" class="form-select form-select-sm fw-bold">
+            <option value="">-- Não alterar --</option>
+            <option value="100_jerry">👦🏻 100% Jerry</option>
+            <option value="100_larissa">👱🏻‍♀️ 100% Larissa</option>
+            <option value="50_50">⚖️ 50% / 50%</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-3">
+        <button type="button" class="btn btn-danger btn-sm fw-bold rounded-pill flex-fill py-2" id="btnExcluirLote" onclick="excluirLoteFrontend()">
+          <i class="bi bi-trash-fill me-1"></i> Excluir
+        </button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold rounded-pill flex-fill py-2" id="btnSalvarLote" onclick="aplicarEdicaoLoteFrontend()">
+          <i class="bi bi-check-circle-fill me-1"></i> Aplicar Alterações
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    let historicoGlobal = []; 
+    let idUnicoEdicao = null;
+    let editandoLixeira = false;
+    let telaOrigemEdicao = 'categorizar';
+    let abaAtual = 'categorizar';
+    let limiteCat = 50; 
+    let posicaoScroll = 0; 
+    let dashboardRenderizado = false; 
+    let ultimasEditadasRenderizado = false; // NOVO: Flag da nova aba
+    let jerryRenderizado = false; // NOVO
+    let larissaRenderizado = false; // NOVO
+
+    // Categorias
+    const categorias = [
+      "🍽️ comer fora", "🍺 alcool", "🛒 mercado", "🏠 moradia", "🚘 carro", "🧳 viagens", 
+      "🎓 educacao", "🛍️ compras", "⛽️ posto de combustivel", "🌇 uso do carro em PMW","🌁 uso do carro em SJC",
+      "💊 saude", "⚽️ entretenimento", "🐈 gato", "👕 roupas e estética", "🎁 presente", "🛩 viagem SJC embraer", 
+      "👨‍👩‍👧 família Larissa", "📱 telefone", "🌻 viagens SJC<>PMW", "💰 emprestimo" 
+    ];
+    // Função inteligente ao selecionar categoria
+    function aoMudarCategoria(nomeCategoria, pularScroll = false) {
+      const boxCustom = document.getElementById('boxCustom');
+      if (nomeCategoria === '⛽️ posto de combustivel') {
+         boxCustom.style.opacity = '0.4';
+         boxCustom.style.pointerEvents = 'none';
+         if(!document.getElementById('alertaPosto100')) {
+           const div = document.createElement('div');
+           div.id = 'alertaPosto100';
+           div.className = 'text-danger fw-bold small mt-1';
+           div.innerText = '⚠️ Despesa em posto fixada em 100% para o pagador.';
+           boxCustom.appendChild(div);
+         }
+      } else {
+         boxCustom.style.opacity = '1';
+         boxCustom.style.pointerEvents = 'auto';
+         const alerta = document.getElementById('alertaPosto100');
+         if(alerta) alerta.remove();
+      }
+      
+      calcularPreview(); // Força recálculo para cravar 100% se for posto
+
+      // 1. Tira o foco de qualquer campo ativo para forçar o teclado do celular a fechar
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        document.activeElement.blur();
+      }
+      
+      // 2. Aguarda a animação do teclado descer (redimensionando a tela) antes de calcular a rolagem
+      if (!pularScroll) {
+        setTimeout(() => {
+          const btnSalvar = document.getElementById('btnSalvar');
+          if (btnSalvar) {
+            btnSalvar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 250);
+      }
+    }
+
+    function calcularCreditosCombustivel() {
+      if (!window.historicoGlobal) return;
+      
+      let credJerry = 0;
+      let credLarissa = 0;
+      
+      for (let i = 0; i < window.historicoGlobal.length; i++) {
+        let g = window.historicoGlobal[i];
+        
+        // 1. CONDIÇÃO DE PARADA: Ao bater no marcador de zeramento, o loop para e ignora o passado
+        if (g.desc === '♻️ Ajuste e Zeramento de Créditos de Combustível') {
+          break;
+        }
+
+        if (g.dataRaw >= '2026-08-27') {
+          
+          // 2. ACRÉSCIMO: Sempre que a categoria for posto de combustível
+          if (g.cat === '⛽️ posto de combustivel') {
+            if (g.pagador === 'Jerry') credJerry += g.valor;
+            if (g.pagador === 'Larissa') credLarissa += g.valor;
+          } 
+          
+          // 3. DEDUÇÃO: EXCLUSIVAMENTE baseada na tag da descrição (ignora qualquer categoria)
+          else if (String(g.desc).includes('[🚗 USO]')) {
+            // Deduz o valor total da viagem apenas dos créditos de quem foi selecionado como pagador
+            if (g.pagador === 'Jerry') credJerry -= (g.valor || 0);
+            if (g.pagador === 'Larissa') credLarissa -= (g.valor || 0);
+          }
+        }
+      }
+      
+      const elJerry = document.getElementById('creditoJerryDisplay');
+      const elLari = document.getElementById('creditoLarissaDisplay');
+      if (elJerry) elJerry.innerText = BRL.format(credJerry);
+      if (elLari) elLari.innerText = BRL.format(credLarissa);
+
+      // Exporta os valores globalmente para o botão "Zerar Créditos" poder pegá-los
+      window.creditosAtuaisJerry = credJerry;
+      window.creditosAtuaisLarissa = credLarissa;
+    }
+
+    let htmlCats = "";
+    categorias.forEach((cat, index) => {
+      htmlCats += `<input type="radio" class="btn-check" name="categoria" id="cat${index}" value="${cat}" required onchange="aoMudarCategoria('${cat}')">`;
+      htmlCats += `<label class="btn btn-outline-secondary" for="cat${index}">${cat}</label>`;
+    });
+    document.getElementById('containerCategorias').innerHTML = htmlCats;
+    
+    // Preenche categorias do menu Uso do Carro (sem Posto de Combustível)
+    let htmlCatsUso = "";
+    categorias.filter(c => c !== '⛽️ posto de combustivel').forEach((cat, index) => {
+      htmlCatsUso += `<input type="radio" class="btn-check" name="usoCategoria" id="usoCat${index}" value="${cat}" required>`;
+      htmlCatsUso += `<label class="btn btn-outline-secondary" for="usoCat${index}">${cat}</label>`;
+    });
+    const elContainerUso = document.getElementById('containerCategoriasUsoCarro');
+    if (elContainerUso) elContainerUso.innerHTML = htmlCatsUso;
+    
+    // Preenche o menu de categorias da seleção em lote
+    let opcoesLote = '<option value="">-- Não alterar --</option>';
+    opcoesLote += '<option value="REMOVER_CATEGORIA">⚠️ Remover Categoria</option>';
+    categorias.forEach(cat => { opcoesLote += `<option value="${cat}">${cat}</option>`; });
+    const elLoteCat = document.getElementById('loteCategoria');
+    if (elLoteCat) elLoteCat.innerHTML = opcoesLote;
+
+    function popularCategoriasPesquisa() {
+      let htmlInc = '<input type="checkbox" class="btn-check" id="pesqCatIncSem" value="SEM_CATEGORIA"><label class="btn btn-outline-secondary shadow-sm" for="pesqCatIncSem">⚠️ Sem categoria</label>';
+      let htmlExc = '<input type="checkbox" class="btn-check" id="pesqCatExcSem" value="SEM_CATEGORIA"><label class="btn btn-outline-danger shadow-sm" for="pesqCatExcSem">⚠️ Sem categoria</label>';
+      
+      categorias.forEach((cat, i) => {
+        htmlInc += `<input type="checkbox" class="btn-check cat-inc" id="pInc${i}" value="${cat}"><label class="btn btn-outline-secondary shadow-sm" for="pInc${i}">${cat}</label>`;
+        htmlExc += `<input type="checkbox" class="btn-check cat-exc" id="pExc${i}" value="${cat}"><label class="btn btn-outline-danger shadow-sm" for="pExc${i}">${cat}</label>`;
+      });
+      document.getElementById('containerPesqCatInc').innerHTML = htmlInc;
+      document.getElementById('containerPesqCatExc').innerHTML = htmlExc;
+    }
+
+    function executarPesquisa() {
+      const termo = document.getElementById('pesqDescricao').value;
+      const incluirLixeira = document.getElementById('pesqIncluirLixeira') ? document.getElementById('pesqIncluirLixeira').checked : false;
+      const dtIni = document.getElementById('pesqDataInicio').value;
+      const dtFim = document.getElementById('pesqDataFim').value;
+
+      // Captura os chips múltiplos
+      const catsInc = Array.from(document.querySelectorAll('#containerPesqCatInc .btn-check:checked')).map(cb => cb.value);
+      const catsExc = Array.from(document.querySelectorAll('#containerPesqCatExc .btn-check:checked')).map(cb => cb.value);
+
+      // Captura novos filtros
+      const pagador = document.getElementById('pesqPagador').value;
+      const naoPagador = document.getElementById('pesqNaoPagador').value;
+      const cotaPosJerry = document.getElementById('pesqCotaJerry').checked;
+      const cotaPosLari = document.getElementById('pesqCotaLari').checked;
+
+      const btn = document.getElementById('btnFazerPesquisa');
+      const status = document.getElementById('statusPesquisa');
+      const lista = document.getElementById('listaPesquisa');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>BUSCANDO...';
+      lista.innerHTML = '';
+      status.classList.remove('d-none');
+      status.innerHTML = 'Varrendo histórico completo...';
+
+      const filtrosParaEnvio = { termo, incluirLixeira, dtIni, dtFim, catsInc, catsExc, pagador, naoPagador, cotaPosJerry, cotaPosLari };
+
+      google.script.run.withSuccessHandler(resultados => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-search"></i> BUSCAR GASTOS';
+        status.classList.add('d-none');
+
+        if (resultados.erro) {
+          lista.innerHTML = `<div class="alert alert-danger">${resultados.erro}</div>`; return;
+        }
+
+        // TÁTICA NINJA COM FILTROS DE MÚLTIPLA SELEÇÃO
+        const resultadosMesclados = resultados.map(resItem => {
+          const itemLocal = historicoGlobal.find(h => h.idUnico === resItem.idUnico);
+          return itemLocal ? itemLocal : resItem;
+        });
+
+        // Re-aplica TODOS os filtros na memória local (Blindagem contra lag da nuvem)
+        const resultadosFinais = resultadosMesclados.filter(item => {
+          if (termo && !item.desc.toLowerCase().includes(termo.toLowerCase())) return false;
+          
+          const cat = (item.cat && item.cat.trim() !== "") ? item.cat : "SEM_CATEGORIA";
+          
+          if (catsInc.length > 0 && !catsInc.includes(cat)) return false;
+          if (catsExc.length > 0 && catsExc.includes(cat)) return false;
+
+          if (pagador && item.pagador !== pagador) return false;
+          if (naoPagador && item.pagador === naoPagador) return false;
+          if (cotaPosJerry && item.cotaJerry <= 0.01) return false;
+          if (cotaPosLari && item.cotaLarissa <= 0.01) return false;
+
+          return true; 
+        });
+
+        window.resultadosPesquisa = resultadosFinais;
+
+        if (resultadosFinais.length === 0) {
+          lista.innerHTML = '<div class="alert alert-warning text-center fw-bold">Nenhum gasto encontrado após cruzamento com a memória local.</div>';
+          return;
+        }
+
+        let html = `<div class="text-muted small fw-bold mb-3">${resultadosFinais.length} resultado(s) retornado(s)</div>`;
+        resultadosFinais.forEach((item, index) => { html += montarCardGastoHtml(item, index); });
+        lista.innerHTML = html;
+
+      }).pesquisarNoServidor(filtrosParaEnvio);
+    }
+
+    // Inicialização
+    window.onload = function() {
+      popularCategoriasPesquisa();
+      const currentUser = localStorage.getItem('usuarioAppGasto');
+      if (currentUser) { aplicarUsuario(currentUser); }
+      carregarPadroesDaMemoria(); 
+      aplicarFiltroCategorizarUI();
+      iniciarGestosDeslizar();
+      
+      // Correção: Carrega o dashboard imediatamente!
+      // A ordenação da tela já ocorre na memória em getDashboardData(), então não há motivo para travar a tela esperando a planilha física ser ordenada.
+      carregarDashboard();
+    };
+
+    // Alterna o sinal dos valores dependendo se é Gasto ou Ressarcimento
+    function aplicarTipoTransacao() {
+      const isRessarcimento = document.getElementById('tipoRessarcimento').checked;
+      const inputs = ['valorTotal', 'cotaJerry', 'cotaLarissa'];
+      
+      inputs.forEach(id => {
+        const el = document.getElementById(id);
+        let val = lerNumeroSeguro(id);
+        if (val !== 0) {
+          if (isRessarcimento && val > 0) val = -val;
+          if (!isRessarcimento && val < 0) val = Math.abs(val);
+          el.value = val.toFixed(3).replace('.', ',');
+        }
+      });
+      calcularPreview();
+    }
+
+    // Garante que o sinal fique correto quando o usuário sai do campo (Blur)
+    ['valorTotal', 'cotaJerry', 'cotaLarissa'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('blur', function() {
+           const isRessarcimento = document.getElementById('tipoRessarcimento').checked;
+           let val = lerNumeroSeguro(id);
+           if (val !== 0) {
+             if (isRessarcimento && val > 0) this.value = (-val).toFixed(3).replace('.', ',');
+             if (!isRessarcimento && val < 0) this.value = Math.abs(val).toFixed(3).replace('.', ',');
+             calcularPreview();
+           }
+        });
+      }
+    });
+
+    // Pular para o campo de valor com a tecla "Enter"
+    document.getElementById('descricao').addEventListener('keydown', function(e) {
+      if(e.key === 'Enter' || e.keyCode === 13) {
+        e.preventDefault(); 
+        document.getElementById('valorTotal').focus(); 
+      }
+    });
+
+    // Função inteligente: Calcula metades e seleciona o texto ao entrar no campo
+    function focarCota(elemento) {
+      let valorTotal = lerNumeroSeguro('valorTotal');
+      let valorAtualDaCota = lerNumeroSeguro(elemento.id);
+      
+      // Se a cota estiver vazia/zerada e houver um valor total, preenche as duas com a metade
+      if (valorTotal > 0 && valorAtualDaCota === 0) {
+        let metade = (valorTotal / 2).toFixed(3).replace('.', ',');
+        document.getElementById('cotaJerry').value = metade;
+        document.getElementById('cotaLarissa').value = metade;
+        calcularPreview(); // Atualiza o texto que diz quem deve pra quem
+      }
+      
+      // Por fim, seleciona todo o texto (seja o valor calculado agora, ou um valor antigo)
+      elemento.select();
+    }
+
+    // Pular para as cotas com a tecla "Enter" no Valor Total
+    document.getElementById('valorTotal').addEventListener('keydown', function(e) {
+      if(e.key === 'Enter' || e.keyCode === 13) {
+        e.preventDefault(); 
+        document.getElementById('cotaJerry').focus(); 
+      }
+    });
+
+    // Rola para as categorias (acionado ao dar Enter ou clicar nas porcentagens)
+    function rolarParaCategorias(e) {
+      // Se foi acionado pelo teclado, mas NÃO for a tecla Enter, aborta a função (não rola a tela)
+      if (e && e.key !== 'Enter' && e.keyCode !== 13) {
+        return;
+      }
+      
+      // Se for a tecla Enter, evita o salto padrão da página e esconde o teclado
+      if (e) {
+        e.preventDefault();
+        e.target.blur(); 
+      }
+      
+      // Rola a tela suavemente para colocar o título da categoria no topo (respeitando a navbar)
+      document.getElementById('ancoraCategoria').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('cotaJerry').addEventListener('keydown', rolarParaCategorias);
+    document.getElementById('cotaLarissa').addEventListener('keydown', rolarParaCategorias);
+
+    // Gestos de Deslizar (Swipe)
+    function iniciarGestosDeslizar() {
+      let startX = 0;
+      document.addEventListener('touchstart', e => { startX = e.touches[0].clientX; });
+      document.addEventListener('touchend', e => {
+        let endX = e.changedTouches[0].clientX;
+        if (endX - startX > 80 && startX < 50) {
+          new bootstrap.Offcanvas(document.getElementById('offcanvasMenu')).show();
+        }
+      });
+    }
+
+    // Função chamada apenas ao Editar (para carregar o pagador original)
+    function aplicarUsuario(nome) {
+      const radioPagador = document.querySelector(`input[name="pagadorRadio"][value="${nome}"]`);
+      if (radioPagador) radioPagador.checked = true;
+      calcularPreview();
+      atualizarListaReferencia();
+    }
+
+    let filtroUsuarioCategorizar = localStorage.getItem('filtroUsuarioCategorizar') || 'todos';
+
+    // Disparada ao clicar nos chips da Sidebar
+    function filtrarCategorizar(usuario) {
+      filtroUsuarioCategorizar = usuario;
+      localStorage.setItem('filtroUsuarioCategorizar', usuario);
+      
+      // Se selecionou Jerry ou Larissa, assume como o "Dono do Celular" (para autocompletar futuros gastos)
+      if (usuario === 'Jerry' || usuario === 'Larissa') {
+        localStorage.setItem('usuarioAppGasto', usuario);
+      }
+
+      aplicarFiltroCategorizarUI();
+      renderizarListaCategorizar();
+
+      // NOVO: Atualiza a listinha de atalhos se a aba de relatórios estiver aberta
+      if (abaAtual === 'relatorio' && typeof renderizarPresets === 'function') {
+        renderizarPresets();
+      }
+
+      atualizarSaldoTopo();
+    }
+
+    function atualizarSaldoTopo() {
+      const saldoSpan = document.getElementById('saldoTopoNav');
+      if (!saldoSpan || typeof window.balancoGlobalExato === 'undefined') return;
+      
+      let saldoLivreJerry = Math.round(window.balancoGlobalExato * 100) / 100;
+      let user = filtroUsuarioCategorizar; 
+      
+      if (user === 'todos') {
+        saldoSpan.classList.add('d-none');
+        return;
+      }
+      
+      saldoSpan.classList.remove('d-none', 'text-success', 'text-danger', 'text-secondary');
+      
+      if (user === 'Jerry') {
+        if (saldoLivreJerry > 0.01) {
+          saldoSpan.innerText = `+${BRL.format(saldoLivreJerry)}`;
+          saldoSpan.classList.add('text-success');
+        } else if (saldoLivreJerry < -0.01) {
+          saldoSpan.innerText = `-${BRL.format(Math.abs(saldoLivreJerry))}`;
+          saldoSpan.classList.add('text-danger');
+        } else {
+          saldoSpan.innerText = "R$ 0,00";
+          saldoSpan.classList.add('text-secondary');
+        }
+      } else if (user === 'Larissa') {
+        if (saldoLivreJerry < -0.01) {
+          saldoSpan.innerText = `+${BRL.format(Math.abs(saldoLivreJerry))}`;
+          saldoSpan.classList.add('text-success');
+        } else if (saldoLivreJerry > 0.01) {
+          saldoSpan.innerText = `-${BRL.format(saldoLivreJerry)}`;
+          saldoSpan.classList.add('text-danger');
+        } else {
+          saldoSpan.innerText = "R$ 0,00";
+          saldoSpan.classList.add('text-secondary');
+        }
+      }
+    }
+
+    function aplicarFiltroCategorizarUI() {
+      const radio = document.querySelector(`input[name="filtroCatUser"][value="${filtroUsuarioCategorizar}"]`);
+      if (radio) radio.checked = true;
+      
+      const emojiAtivo = document.getElementById('emojiUsuarioAtivo');
+      if (emojiAtivo) {
+        if (filtroUsuarioCategorizar === 'Jerry') emojiAtivo.innerText = '👦🏻';
+        else if (filtroUsuarioCategorizar === 'Larissa') emojiAtivo.innerText = '👱🏻‍♀️';
+        else emojiAtivo.innerText = '👥';
+      }
+    }
+
+    function renderizarListaCategorizar() {
+      const listaCategorizar = document.getElementById('listaCategorizar');
+      if (!listaCategorizar || !historicoGlobal) return;
+
+      let htmlCategorizar = "";
+      let countTotal = 0;
+      let countExibidos = 0;
+
+      // O index original é mantido para a edição funcionar perfeitamente
+          historicoGlobal.forEach((item, index) => {
+            const semCategoria = !item.cat || item.cat.trim() === "";
+            const divisaoIncompleta = Math.abs((item.cotaJerry + item.cotaLarissa) - item.valor) > 0.01;
+            const pendente = semCategoria || divisaoIncompleta;
+            
+            const passaFiltroUsuario = (filtroUsuarioCategorizar === 'todos') || (item.pagador === filtroUsuarioCategorizar);
+
+            if (pendente && passaFiltroUsuario) {
+              countTotal++;
+              if (countExibidos < limiteCat) {
+                htmlCategorizar += montarCardGastoHtml(item, index);
+                countExibidos++;
+              }
+            }
+          });
+
+          if (countTotal === 0) {
+            listaCategorizar.innerHTML = `
+              <div class="alert alert-success text-center border-0 rounded-4 shadow-sm p-4 mt-2">
+                <i class="bi bi-check-circle-fill fs-2 text-success d-block mb-2"></i>
+                <span class="fw-bold">Tudo em ordem!</span><br>
+                <small class="text-muted">Nenhum gasto pendente de categoria ou divisão encontrado para esta seleção.</small>
+              </div>`;
+          } else {
+        // Se houver mais itens na memória do que o limite atual, desenha o botão
+        if (countTotal > countExibidos) {
+          htmlCategorizar += `
+            <button class="btn btn-outline-primary w-100 py-3 mt-2 mb-4 fw-bold rounded-pill" onclick="carregarMaisCategorias()">
+              Carregar mais antigos (${countTotal - countExibidos} restantes)
+            </button>
+          `;
+        }
+        listaCategorizar.innerHTML = htmlCategorizar;
+      }
+    }
+
+    function carregarMaisCategorias() {
+      limiteCat += 50;
+      renderizarListaCategorizar(); // Re-desenha a tela instantaneamente
+    }
+
+    // Controle de Telas
+    function switchTab(viewId, pularLoad = false) {
+      // NOVO: Rola para o topo ao trocar de menu (mas ignora se estiver voltando de uma edição/salvamento)
+      if (!pularLoad && viewId !== 'lancar') {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+
+      document.getElementById('view-lancar').classList.add('d-none');
+      document.getElementById('view-dashboard').classList.add('d-none');
+      document.getElementById('view-ultimasEditadas').classList.add('d-none');
+      document.getElementById('view-categorizar').classList.add('d-none');
+      document.getElementById('view-pesquisar').classList.add('d-none');
+      document.getElementById('view-despesasJerry').classList.add('d-none');
+      document.getElementById('view-despesasLarissa').classList.add('d-none');
+      document.getElementById('view-lixeira').classList.add('d-none');
+      document.getElementById('view-relatorio').classList.add('d-none');
+      document.getElementById('view-usoCarro').classList.add('d-none');
+      
+      document.getElementById('view-' + viewId).classList.remove('d-none');
+      
+      const navTitulo = document.getElementById('navTituloArea');
+      const fabBtn = document.getElementById('fabAdd');
+      
+      // Dicionário de títulos para atualizar dinamicamente o topo da tela
+      const titulosMenu = {
+        'categorizar': '<i class="bi bi-tags me-2 text-warning"></i>Pendências',
+        'dashboard': '<i class="bi bi-journal-text me-2 text-success"></i>Últimas',
+        'ultimasEditadas': '<i class="bi bi-clock-history me-2 text-info"></i>Edições',
+        'despesasJerry': '<i class="bi bi-person-fill me-2 text-primary"></i>Jerry',
+        'despesasLarissa': '<i class="bi bi-person-fill me-2" style="color: #e83e8c;"></i>Larissa',
+        'pesquisar': '<i class="bi bi-search me-2 text-info"></i>Pesquisar',
+        'lixeira': '<i class="bi bi-trash me-2 text-danger"></i>Lixeira',
+        'relatorio': 'Relatórios',
+        'usoCarro': '<i class="bi bi-car-front me-2 text-secondary"></i>Uso do Carro'
+      };
+      if (titulosMenu[viewId]) {
+        const elTitulo = document.getElementById('tituloAbaAtual');
+        if (elTitulo) elTitulo.innerHTML = titulosMenu[viewId];
+      }
+
+      // Salva qual aba principal o usuário estava visualizando antes de entrar em lançar/editar
+      if (viewId === 'dashboard' || viewId === 'ultimasEditadas' || viewId === 'categorizar' || viewId === 'pesquisar' || viewId === 'despesasJerry' || viewId === 'despesasLarissa' || viewId === 'lixeira' || viewId === 'relatorio') {
+        abaAtual = viewId;
+      }
+
+      // Controla a exibição dos menus do topo e chamadas de renderização
+      if (viewId !== 'lancar') {
+        if (navTitulo) navTitulo.classList.remove('d-none');
+        if (fabBtn) {
+          // Exibe o FAB apenas na tela de Pendências (categorizar)
+          if (viewId === 'categorizar') {
+            fabBtn.classList.remove('d-none');
+          } else {
+            fabBtn.classList.add('d-none');
+          }
+        }
+
+        if (viewId === 'dashboard' && !dashboardRenderizado && window.historicoGlobal && window.historicoGlobal.length > 0) {
+          renderizarListaHistorico();
+        } else if (viewId === 'ultimasEditadas' && !ultimasEditadasRenderizado && window.historicoGlobal && window.historicoGlobal.length > 0) {
+          renderizarListaUltimasEditadas();
+        } else if (viewId === 'despesasJerry' && !jerryRenderizado && window.historicoGlobal && window.historicoGlobal.length > 0) {
+          renderizarListaJerry();
+        } else if (viewId === 'despesasLarissa' && !larissaRenderizado && window.historicoGlobal && window.historicoGlobal.length > 0) {
+          renderizarListaLarissa();
+        } else if (viewId === 'lixeira') {
+          carregarLixeira();
+        } else if (viewId === 'relatorio') {
+          inicializarRelatorio();
+        }
+      } else { 
+        // Tela Lançar
+        if (navTitulo) navTitulo.classList.remove('d-none');
+        if (fabBtn) fabBtn.classList.add('d-none');
+        
+        // Atualiza o título do topo para a tela de lançamento/edição
+        const elTitulo = document.getElementById('tituloAbaAtual');
+        if (elTitulo) elTitulo.innerHTML = idUnicoEdicao ? '<i class="bi bi-pencil-square me-2 text-warning"></i>Editando' : '<i class="bi bi-plus-circle me-2 text-primary"></i>Novo Gasto';
+        
+        if (viewId === 'usoCarro') {
+          // Pré-seleciona o pagador com base no filtro global ativo
+          document.querySelectorAll('input[name="usoPagadorRadio"]').forEach(el => el.checked = false);
+          if (filtroUsuarioCategorizar === 'Jerry' || filtroUsuarioCategorizar === 'Larissa') {
+            const radio = document.querySelector(`input[name="usoPagadorRadio"][value="${filtroUsuarioCategorizar}"]`);
+            if (radio) radio.checked = true;
+          }
+          if(typeof calcularCreditosCombustivel === 'function') calcularCreditosCombustivel();
+        }
+
+        if (viewId === 'lancar') {
+          // NOVO: Ajusta o texto e o botão de excluir da faixa amarela
+          if (idUnicoEdicao) {
+            document.getElementById('textoAlertaTopo').innerHTML = '<i class="bi bi-pencil-square me-1"></i>Editando';
+            document.getElementById('btnExcluir').classList.remove('d-none');
+            document.getElementById('btnDesmembrar').classList.remove('d-none');
+            
+            // CORREÇÃO DO GHOST CLICK (Tap Bleed)
+            const formGasto = document.getElementById('formGasto');
+            if (formGasto) {
+              formGasto.style.pointerEvents = 'none'; // Trava a interação do formulário temporariamente
+              setTimeout(() => { formGasto.style.pointerEvents = 'auto'; }, 400); // Destrava após 400ms
+            }
+            // Garantia extra para recolher o teclado caso o navegador force o foco
+            setTimeout(() => {
+              if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+                document.activeElement.blur();
+              }
+            }, 50);
+
+          } else {
+            document.getElementById('textoAlertaTopo').innerHTML = '<i class="bi bi-plus-circle me-1"></i>Novo Gasto';
+            document.getElementById('btnExcluir').classList.add('d-none');
+            document.getElementById('btnDesmembrar').classList.add('d-none');
+          }
+
+          // Rola imediatamente para o topo sem animação
+          window.scrollTo({ top: 0, behavior: 'instant' });
+
+          // Apenas coloca o foco na descrição se for um gasto novo
+          if (!idUnicoEdicao) {
+            setTimeout(() => {
+              const inputDesc = document.getElementById('descricao');
+              inputDesc.focus({ preventScroll: true });
+              inputDesc.setSelectionRange(0, 0);
+            }, 100);
+          }
+        }
+      }
+    }
+
+    // Sistema de Padrões na Memória (LocalStorage)
+    function carregarPadroesDaMemoria() {
+      aplicarPadroesUI();
+    }
+
+
+
+    // Variável global para armazenar o histórico e alimentar a listinha
+    window.historicoGlobal = []; 
+
+    function atualizarListaReferencia() {
+      const radioPagador = document.querySelector('input[name="pagadorRadio"]:checked');
+      const user = radioPagador ? radioPagador.value : (localStorage.getItem('usuarioAppGasto') || 'Usuário');
+      const formaChecked = document.querySelector('input[name="forma"]:checked');
+      const forma = formaChecked ? formaChecked.value : '';
+      
+      // 1. Atualiza o rótulo do título dinamicamente com base na forma ativa
+      let nomeForma = 'OUTROS';
+      if (forma.includes('credito')) {
+        nomeForma = 'CRÉDITO';
+      } else if (forma.includes('conta')) {
+        nomeForma = 'DÉB/PIX';
+      } else if (forma.includes('calculo')) {
+        nomeForma = 'CÁLCULO';
+      }
+
+      document.getElementById('tituloReferencia').innerText = `ÚLTIMOS DE ${user.toUpperCase()} (${nomeForma})`;
+
+      const listaDiv = document.getElementById('listaReferencia');
+      if (!window.historicoGlobal || window.historicoGlobal.length === 0) {
+        listaDiv.innerHTML = '<div class="fst-italic text-muted mt-1">Carregando dados...</div>';
+        return;
+      }
+
+      // 2. Filtra os dados: mesmo usuário e mesma forma de pagamento selecionada no card
+      const filtrados = window.historicoGlobal.filter(g => g.pagador === user && g.forma === forma);
+
+      if (filtrados.length === 0) {
+        listaDiv.innerHTML = '<div class="fst-italic text-muted mt-1">Nenhum gasto recente.</div>';
+        return;
+      }
+
+      const formatadorMoeda = typeof BRL !== 'undefined' ? BRL : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+      // 3. Monta o HTML da listinha limitando aos 5 últimos
+      let html = "";
+      filtrados.slice(0, 5).forEach(g => {
+        const diaMes = g.data.substring(0, 5);
+        const valorFormatado = formatadorMoeda.format(g.valor || 0);
+        
+        html += `
+          <div class="d-flex justify-content-between align-items-center text-secondary mb-1">
+            <div class="text-truncate pe-1"><strong>${diaMes}</strong> - ${g.desc}</div>
+            <div class="fw-bold text-nowrap">${valorFormatado}</div>
+          </div>`;
+      });
+      listaDiv.innerHTML = html;
+    }
+
+    
+
+
+    // Prepara a tela de Novo Gasto limpa e inteligente
+    function aplicarPadroesUI() {
+      if (idUnicoEdicao) return; // Se for edição, não mexe em nada!
+      
+      editandoLixeira = false;
+      const btnSalvar = document.getElementById('btnSalvar');
+      if (btnSalvar) {
+        btnSalvar.classList.replace('btn-success', 'btn-primary');
+        const icone = btnSalvar.querySelector('i');
+        if (icone) icone.className = 'bi bi-save';
+      }
+
+      const boxCopiar = document.getElementById('boxCopiarId');
+      if (boxCopiar) boxCopiar.classList.add('d-none');
+
+      // 1. Define a data de Hoje
+      let d = new Date();
+      const offset = d.getTimezoneOffset();
+      const strData = new Date(d.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+      document.getElementById('dataCustom').value = strData;
+      document.getElementById('horaCustom').value = "";
+
+      // 2. Limpa as formas de pagamento (vem sem nada marcado)
+      document.querySelectorAll('input[name="forma"]').forEach(el => el.checked = false);
+
+      // Reseta tipo de transação para Gasto por padrão
+      document.getElementById('tipoGasto').checked = true;
+
+      // 3. Autocompleta o Pagador apenas se Jerry ou Larissa estiverem selecionados.
+      // Se for 'todos', garante que nenhum campo venha pré-marcado.
+      document.querySelectorAll('input[name="pagadorRadio"]').forEach(el => el.checked = false);
+      
+      if (filtroUsuarioCategorizar === 'Jerry' || filtroUsuarioCategorizar === 'Larissa') {
+        const radioPagador = document.querySelector(`input[name="pagadorRadio"][value="${filtroUsuarioCategorizar}"]`);
+        if (radioPagador) radioPagador.checked = true;
+      }
+
+      calcularPreview();
+      atualizarListaReferencia();
+    }
+
+    function getSelectedDate() {
+      // Como não há mais botões, a data lida para salvar é simplesmente o valor do campo
+      return document.getElementById('dataCustom').value;
+    }
+
+    // CALCULADORA INTELIGENTE (Resolve Ponto vs Vírgula)
+    function lerNumeroSeguro(idElemento) {
+      let val = document.getElementById(idElemento).value;
+      if (!val) return 0;
+      
+      // Se o usuário digitou vírgula (ex: 15,00 ou 1.500,50), removemos o ponto de milhar e trocamos vírgula por ponto
+      if (val.includes(',')) {
+        val = val.replace(/\./g, '').replace(',', '.');
+      }
+      // Se não tiver vírgula (ex: 1.50), a gente não faz replace nenhum e deixa o parseFloat ler direto o ponto decimal nativo!
+      
+      return parseFloat(val) || 0;
+    }
+
+    const inputValor = document.getElementById('valorTotal');
+    const inputCotaJerry = document.getElementById('cotaJerry');
+    const inputCotaLarissa = document.getElementById('cotaLarissa');
+    const previewTexto = document.getElementById('previewTexto');
+
+    let cotaJerryCalc = 0; let cotaLarissaCalc = 0;
+
+    // Ao digitar no valor total, recalcula as cotas para 50/50 em tempo real
+    inputValor.addEventListener('input', function() {
+      let total = lerNumeroSeguro('valorTotal');
+      let metade = (total / 2).toFixed(3).replace('.', ',');
+      
+      document.getElementById('cotaJerry').value = metade;
+      document.getElementById('cotaLarissa').value = metade;
+      
+      calcularPreview();
+    });
+
+    // Ao digitar na cota do Jerry, recalcula automaticamente a da Larissa
+    inputCotaJerry.addEventListener('input', function() {
+      let total = lerNumeroSeguro('valorTotal');
+      let jerry = lerNumeroSeguro('cotaJerry');
+      document.getElementById('cotaLarissa').value = (total - jerry).toFixed(3).replace('.', ',');
+      calcularPreview();
+    });
+
+    // Ao digitar na cota da Larissa, recalcula automaticamente a do Jerry
+    inputCotaLarissa.addEventListener('input', function() {
+      let total = lerNumeroSeguro('valorTotal');
+      let larissa = lerNumeroSeguro('cotaLarissa');
+      document.getElementById('cotaJerry').value = (total - larissa).toFixed(3).replace('.', ',');
+      calcularPreview();
+    });
+
+    // Função do botão 100%
+    function setCotaTotal(cotaAlvo) {
+      let total = lerNumeroSeguro('valorTotal');
+      let strTotal = total.toFixed(3).replace('.', ',');
+      
+      if (cotaAlvo === 'cotaJerry') {
+        document.getElementById('cotaJerry').value = strTotal;
+        document.getElementById('cotaLarissa').value = '0,000';
+      } else {
+        document.getElementById('cotaLarissa').value = strTotal;
+        document.getElementById('cotaJerry').value = '0,000';
+      }
+      calcularPreview();
+      rolarParaCategorias(); // Rola para a categoria automaticamente
+    }
+
+
+    // Função do botão 50/50
+    function dividirMeioAMeio() {
+      let total = lerNumeroSeguro('valorTotal');
+      let metade = (total / 2).toFixed(3).replace('.', ',');
+      document.getElementById('cotaJerry').value = metade;
+      document.getElementById('cotaLarissa').value = metade;
+      calcularPreview();
+      rolarParaCategorias(); // Rola para a categoria automaticamente
+    }
+
+    function calcularPreview() {
+      const valor = lerNumeroSeguro('valorTotal');
+      const radioPagador = document.querySelector('input[name="pagadorRadio"]:checked');
+      const pagador = radioPagador ? radioPagador.value : '';
+
+      const radioCatAtivo = document.querySelector('input[name="categoria"]:checked');
+      if (radioCatAtivo && radioCatAtivo.value === '⛽️ posto de combustivel' && pagador) {
+          if (pagador === 'Jerry') {
+              document.getElementById('cotaJerry').value = valor.toFixed(3).replace('.', ',');
+              document.getElementById('cotaLarissa').value = '0,000';
+          } else if (pagador === 'Larissa') {
+              document.getElementById('cotaLarissa').value = valor.toFixed(3).replace('.', ',');
+              document.getElementById('cotaJerry').value = '0,000';
+          }
+      }
+
+      cotaJerryCalc = lerNumeroSeguro('cotaJerry');
+      cotaLarissaCalc = lerNumeroSeguro('cotaLarissa');
+
+      if (valor === 0) {
+        previewTexto.innerHTML = "Preencha o valor para ver o acerto.";
+        previewTexto.className = "text-muted fs-6"; return;
+      }
+
+      const isRessarcimento = document.getElementById('tipoRessarcimento').checked;
+
+      // NOVO: Checagem de valores negativos / positivos baseada no tipo de transação
+      if (!isRessarcimento && (cotaJerryCalc < -0.01 || cotaLarissaCalc < -0.01)) {
+        previewTexto.innerHTML = "⚠️ Erro: Gasto não pode ter cota negativa!";
+        previewTexto.className = "text-danger fw-bold fs-5"; 
+        return; 
+      } else if (isRessarcimento && (cotaJerryCalc > 0.01 || cotaLarissaCalc > 0.01)) {
+        previewTexto.innerHTML = "⚠️ Erro: Ressarcimento precisa ter cotas negativas!";
+        previewTexto.className = "text-danger fw-bold fs-5"; 
+        return; 
+      }
+
+      let saldoJerry = (pagador === 'Jerry') ? cotaLarissaCalc : -cotaJerryCalc;
+
+      if (saldoJerry > 0) { previewTexto.innerHTML = `Larissa deve pagar ${BRL.format(saldoJerry)} a Jerry.`; previewTexto.className = "text-success fw-bold fs-5"; } 
+      else if (saldoJerry < 0) { previewTexto.innerHTML = `Jerry deve pagar ${BRL.format(Math.abs(saldoJerry))} a Larissa.`; previewTexto.className = "text-danger fw-bold fs-5"; } 
+      else { previewTexto.innerHTML = `Contas quitadas.`; previewTexto.className = "text-info fw-bold fs-5"; }
+    }
+
+
+    
+
+
+    function atualizarItemLocalmente(dadosSalvos) {
+      if (!historicoGlobal || !dadosSalvos.idUnico) return;
+
+      let idx = historicoGlobal.findIndex(item => item.idUnico === dadosSalvos.idUnico);
+      
+      // Se não achou no histórico global (card antigo vindo da pesquisa), injetamos ele no array principal agora
+      if (idx === -1 && window.resultadosPesquisa) {
+        const itemAntigoPesquisa = window.resultadosPesquisa.find(it => it.idUnico === dadosSalvos.idUnico);
+        if (itemAntigoPesquisa) {
+          historicoGlobal.unshift(itemAntigoPesquisa); // Joga no topo do histórico
+          idx = 0; // Agora o índice dele é 0
+        }
+      }
+
+      if (idx === -1) return;
+
+      // --- NOVO: Captura o impacto do item ANTES da edição ---
+      const itemAntigo = historicoGlobal[idx];
+      const impactoAntigoJerry = (itemAntigo.pagador === 'Jerry') ? itemAntigo.cotaLarissa : -itemAntigo.cotaJerry;
+
+      const partes = dadosSalvos.dataGasto.split('-');
+      const dataFormatada = partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : dadosSalvos.dataGasto;
+
+      historicoGlobal[idx] = {
+        ...historicoGlobal[idx],
+        desc: dadosSalvos.descricao,
+        cat: dadosSalvos.categoria,
+        forma: dadosSalvos.forma,
+        pagador: dadosSalvos.pagador,
+        valor: dadosSalvos.valorTotal,
+        cotaJerry: dadosSalvos.jerry,
+        cotaLarissa: dadosSalvos.larissa,
+        data: dataFormatada,
+        dataRaw: dadosSalvos.dataGasto,
+        horario: dadosSalvos.horario,
+        tsEdicao: new Date().getTime() // Atualiza na hora para saltar pro topo nas Últimas Editadas
+      };
+
+      window.historicoGlobal = historicoGlobal;
+
+      // --- NOVO: Calcula o impacto NOVO e ajusta o balanço exato por diferença (delta) ---
+      const impactoNovoJerry = (dadosSalvos.pagador === 'Jerry') ? dadosSalvos.larissa : -dadosSalvos.jerry;
+      if (typeof window.balancoGlobalExato !== 'undefined') {
+        window.balancoGlobalExato = window.balancoGlobalExato - impactoAntigoJerry + impactoNovoJerry;
+      }
+
+      atualizarSaldoTopo();
+
+      // Re-renderização imediata sincronizada
+      if (dashboardRenderizado || abaAtual === 'dashboard') {
+        renderizarListaHistorico();
+      }
+      if (ultimasEditadasRenderizado || abaAtual === 'ultimasEditadas') {
+        renderizarListaUltimasEditadas();
+      }
+      if (jerryRenderizado || abaAtual === 'despesasJerry') {
+        renderizarListaJerry();
+      }
+      if (larissaRenderizado || abaAtual === 'despesasLarissa') {
+        renderizarListaLarissa();
+      }
+      renderizarListaCategorizar();
+      atualizarListaReferencia();
+      
+      // NOVO: Atualiza o card também na tela de Pesquisa Avançada, caso ele esteja lá
+      if (window.resultadosPesquisa) {
+        const idxPesq = window.resultadosPesquisa.findIndex(it => it.idUnico === dadosSalvos.idUnico);
+        if (idxPesq !== -1) {
+          const updatedItem = historicoGlobal.find(h => h.idUnico === dadosSalvos.idUnico);
+          if (updatedItem) {
+            window.resultadosPesquisa[idxPesq] = updatedItem;
+            const listaPesquisa = document.getElementById('listaPesquisa');
+            if (listaPesquisa) {
+              let htmlPesq = `<div class="text-muted small fw-bold mb-3">${window.resultadosPesquisa.length} resultado(s) retornado(s)</div>`;
+              window.resultadosPesquisa.forEach((it, i) => { htmlPesq += montarCardGastoHtml(it, i); });
+              listaPesquisa.innerHTML = htmlPesq;
+            }
+          }
+        }
+      }
+    }
+
+    function restaurarAposClickPesquisa(idUnico) {
+      const btn = document.getElementById('btnSalvar');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Restaurando...';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          btn.disabled = false;
+          if (res && res.success) {
+            // Remove a marcação de lixeira da memória
+            const itemGlobal = historicoGlobal.find(it => it.idUnico === idUnico);
+            if (itemGlobal) itemGlobal.isLixeira = false;
+            
+            if (window.resultadosPesquisa) {
+              const itemPesq = window.resultadosPesquisa.find(it => it.idUnico === idUnico);
+              if (itemPesq) itemPesq.isLixeira = false;
+            }
+
+            // Atualiza os saldos gerais na nuvem em segundo plano
+            carregarDashboard();
+
+            if (confirm("Gasto restaurado com sucesso!\n\nDeseja editar este gasto agora?")) {
+              editandoLixeira = false;
+              btn.classList.replace('btn-success', 'btn-primary');
+              btn.innerHTML = '<i class="bi bi-save"></i> <span id="textoBtnSalvar">ATUALIZAR GASTO ANTIGO</span>';
+            } else {
+              atualizarCardsTelaAtiva(); // Remove o badge "Da Lixeira" da interface
+              cancelarEdicao(); // Volta suavemente para a pesquisa
+            }
+          } else {
+            alert("Erro ao restaurar: " + (res ? res.message : "Erro desconhecido"));
+            btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> <span id="textoBtnSalvar">RESTAURAR DA LIXEIRA</span>';
+          }
+        })
+        .withFailureHandler(err => {
+          alert("Erro no servidor: " + err);
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> <span id="textoBtnSalvar">RESTAURAR DA LIXEIRA</span>';
+        })
+        .restaurarGasto(idUnico);
+    }
+
+    // SALVAR / ATUALIZAR (COM EDIÇÃO INSTANTÂNEA E ID ÚNICO)
+    document.getElementById('formGasto').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // Trava o salvamento caso esteja no modo lixeira e direciona para restaurar
+      if (editandoLixeira) {
+        restaurarAposClickPesquisa(idUnicoEdicao);
+        return;
+      }
+
+      const btn = document.getElementById('btnSalvar');
+      const status = document.getElementById('statusMsg');
+      const valorTotal = lerNumeroSeguro('valorTotal');
+      const strDataCalculada = getSelectedDate();
+      
+      if (!strDataCalculada) { alert("Data inválida."); return; }
+      
+      const radioPagadorAtivo = document.querySelector('input[name="pagadorRadio"]:checked');
+      if (!radioPagadorAtivo) { alert("Por favor, selecione quem pagou na seção 'QUEM PAGOU?'."); return; }
+
+      const somaCotas = lerNumeroSeguro('cotaJerry') + lerNumeroSeguro('cotaLarissa');
+      if (Math.abs(somaCotas - valorTotal) > 0.01) { alert("A soma das cotas não bate com o valor total!"); return; }
+      
+      const isRessarcimento = document.getElementById('tipoRessarcimento').checked;
+      if (!isRessarcimento && (lerNumeroSeguro('cotaJerry') < -0.01 || lerNumeroSeguro('cotaLarissa') < -0.01)) { 
+        alert("Em um gasto comum, as cotas não podem ter valor negativo!");
+        return; 
+      }
+      if (isRessarcimento && (lerNumeroSeguro('cotaJerry') > 0.01 || lerNumeroSeguro('cotaLarissa') > 0.01)) { 
+        alert("Em um ressarcimento, as cotas não podem ter valor positivo!");
+        return; 
+      }
+
+      const ehEdicao = Boolean(idUnicoEdicao);
+      const radioCat = document.querySelector('input[name="categoria"]:checked');
+      const radioForma = document.querySelector('input[name="forma"]:checked');
+
+      const dados = {
+        idUnico: idUnicoEdicao,
+        descricao: document.getElementById('descricao').value,
+        dataGasto: strDataCalculada, 
+        horario: document.getElementById('horaCustom').value, // NOVO
+        categoria: radioCat ? radioCat.value : "",
+        forma: radioForma ? radioForma.value : "",
+        valorTotal: valorTotal,
+        jerry: cotaJerryCalc, 
+        larissa: cotaLarissaCalc,
+        pagador: radioPagadorAtivo.value
+      };
+
+      // Feedback visual imediato no botão no instante do clique!
+      btn.disabled = true;
+      if (ehEdicao) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Atualizando...';
+      } else {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Salvando...';
+      }
+
+      if (ehEdicao) {
+        // Atualiza a memória local
+        atualizarItemLocalmente(dados);
+        
+        setTimeout(() => {
+          idUnicoEdicao = null;
+          const alerta = document.getElementById('alertaEdicao');
+          alerta.classList.remove('d-flex');
+          alerta.classList.add('d-none');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-save"></i> <span id="textoBtnSalvar">CONFIRMAR GASTO</span>';
+          document.getElementById('formGasto').reset();
+          aplicarPadroesUI();
+          // Retorna para a lista
+          switchTab(telaOrigemEdicao, true);
+          // Garante que o scroll aconteça antes do primeiro quadro ser desenhado, sem piscar a tela
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: posicaoScroll, behavior: 'instant' });
+          });
+        }, 120);
+
+        // Envia para o Sheets em background
+        google.script.run
+          .withFailureHandler(err => alert("Aviso: Houve um erro ao sincronizar no Sheets: " + err))
+          .salvarGasto(dados);
+        return;
+      }
+
+      // Novo lançamento: mantém feedback padrão
+      status.innerText = "";
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false; 
+          btn.innerHTML = '<i class="bi bi-save"></i> <span id="textoBtnSalvar">CONFIRMAR GASTO</span>';
+          
+          if (res.success) {
+            status.innerHTML = `<span class="text-success fs-5"><i class="bi bi-check-circle-fill"></i> Salvo com sucesso!</span>`;
+            
+            document.getElementById('descricao').value = ""; 
+            document.getElementById('valorTotal').value = "";
+            document.querySelectorAll('input[name="categoria"]').forEach(el => el.checked = false);
+            
+            aplicarPadroesUI();
+            
+            google.script.run.withSuccessHandler(res => { 
+              if (res && res.historico) { 
+                window.historicoGlobal = res.historico; 
+                historicoGlobal = res.historico;
+                atualizarListaReferencia(); 
+                
+                // NOVO: Atualiza o texto do saldo dinamicamente caso um gasto novo afete as contas
+                if (res.balancoLiquido !== undefined) {
+                  window.balancoGlobalExato = res.balancoLiquido;
+                  atualizarSaldoTopo();
+                }
+              } 
+            }).getDashboardData();
+
+            setTimeout(() => {
+              const inputDesc = document.getElementById('descricao');
+              inputDesc.focus({ preventScroll: true });
+              inputDesc.setSelectionRange(0, 0);
+              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 300);
+            }, 300);
+
+            setTimeout(() => status.innerText = "", 4000);
+          } else { 
+            status.innerHTML = `<span class="text-danger">Erro: ${res.message}</span>`; 
+          }
+        })
+        .salvarGasto(dados);
+    });
+
+    // LISTAGEM DE HISTÓRICO DO CARRO
+    document.querySelectorAll('input[name="carroSelecionado"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        carregarHistoricoCarro(this.value);
+      });
+    });
+
+    function carregarHistoricoCarro(carro) {
+      const divLista = document.getElementById('listaUltimosUsosCarro');
+      divLista.innerHTML = '<div class="text-center text-muted fst-italic small mt-2"><div class="spinner-border spinner-border-sm text-secondary"></div> Buscando histórico...</div>';
+      
+      google.script.run.withSuccessHandler(registros => {
+        if (!registros || registros.length === 0) {
+          divLista.innerHTML = '<div class="text-center text-muted fst-italic small mt-2">Nenhum registro encontrado.</div>';
+          return;
+        }
+        let html = '';
+        registros.forEach(r => {
+          let strData = r.data ? r.data : "Sem data";
+          html += `
+            <div class="d-flex justify-content-between align-items-center bg-light border rounded p-2 mb-2 text-secondary shadow-sm" style="font-size: 0.8rem; user-select: none;"
+                 onpointerdown="iniciarPressaoUsoCarro(event, '${r.idGasto}', '${carro}')"
+                 onpointerup="finalizarPressaoUsoCarro(event)"
+                 onpointermove="cancelarPressaoUsoCarroSeMovel(event)"
+                 onpointercancel="cancelarPressaoUsoCarroTotal(event)"
+                 oncontextmenu="event.preventDefault()">
+              <div>
+                <strong>${strData}</strong> - ${r.descricao}<br>
+                Trip B: <span class="text-body fw-bold">${r.kmTripB}</span> | KM Total: <span class="text-body fw-bold">${r.kmTotal}</span>
+              </div>
+              <div class="text-end fw-bold">
+                ${r.consumo} km/l<br>
+                <span class="text-success">R$ ${r.precoComb}</span>
+              </div>
+            </div>`;
+        });
+        divLista.innerHTML = html;
+      }).getUltimosRegistrosCarro(carro);
+    }
+
+    // SALVAR USO DO CARRO
+    let dadosPendentesUsoCarro = null; 
+
+    document.getElementById('formUsoCarro').addEventListener('submit', function(e) {
+      e.preventDefault();
+      executarSalvarUsoCarro(false); // Salva normalmente (com as travas ativadas)
+    });
+
+    document.getElementById('btnForcarSalvarUsoCarro').addEventListener('click', function() {
+      executarSalvarUsoCarro(true); // Força a salvar ultrapassando as travas
+    });
+
+    function executarSalvarUsoCarro(forceSave) {
+      const btn = document.getElementById('btnSalvarUsoCarro');
+      const status = document.getElementById('statusMsgUsoCarro');
+      const boxConfirm = document.getElementById('boxConfirmacaoUsoCarro');
+      const textoConfirm = document.getElementById('textoConfirmacaoUsoCarro');
+      
+      // Se não for gravação forçada, capturamos todos os valores da tela
+      if (!forceSave) {
+        const carroRadio = document.querySelector('input[name="carroSelecionado"]:checked');
+        if (!carroRadio) { alert("Selecione o veículo (Pulse ou Strada)."); return; }
+        
+        const catRadio = document.querySelector('input[name="usoCategoria"]:checked');
+        if (!catRadio) { alert("Selecione a categoria do gasto."); return; }
+
+        const pagadorRadio = document.querySelector('input[name="usoPagadorRadio"]:checked');
+        if (!pagadorRadio) { alert("Selecione quem pagou."); return; }
+        
+        const divisaoRadio = document.querySelector('input[name="usoDivisao"]:checked');
+        const divisaoEscolhida = divisaoRadio ? divisaoRadio.value : 'pendente';
+        
+        dadosPendentesUsoCarro = {
+          carro: carroRadio.value,
+          descricao: document.getElementById('usoDescricao').value,
+          categoria: catRadio.value,
+          kmTripB: lerNumeroSeguro('usoKmTripB'),
+          kmTotal: lerNumeroSeguro('usoKmTotal'),
+          consumo: lerNumeroSeguro('usoConsumo'),
+          precoComb: lerNumeroSeguro('usoPrecoComb'),
+          pagador: pagadorRadio.value,
+          divisao: divisaoEscolhida,
+          forceSave: false
+        };
+        
+        if (dadosPendentesUsoCarro.kmTotal <= 0 || dadosPendentesUsoCarro.consumo <= 0 || dadosPendentesUsoCarro.precoComb <= 0) {
+          alert("Preencha os campos numéricos corretamente. Consumo e preço não podem ser zero.");
+          return;
+        }
+      } else {
+        // Altera a tag para true e reenvia para o servidor
+        if (dadosPendentesUsoCarro) {
+          dadosPendentesUsoCarro.forceSave = true;
+        }
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Salvando...';
+      status.innerText = "";
+      boxConfirm.classList.add('d-none'); 
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-save"></i> SALVAR USO DO CARRO';
+          
+          if (res.success) {
+            status.innerHTML = `<span class="text-success fs-5"><i class="bi bi-check-circle-fill"></i> Registrado! Custo: ${BRL.format(res.valorCalculado)}</span>`;
+            
+            const carroSalvo = dadosPendentesUsoCarro.carro;
+            document.getElementById('formUsoCarro').reset();
+            dadosPendentesUsoCarro = null;
+            
+            carregarHistoricoCarro(carroSalvo);
+            carregarDashboard();
+            
+            setTimeout(() => {
+              status.innerText = "";
+              // switchTab removido: o usuário permanece na mesma tela para ver o histórico atualizado
+            }, 3000);
+            
+          // RETORNO DO ALERTA DA TRAVA DO BACKEND:
+          } else if (res.requireConfirmation) {
+            boxConfirm.classList.remove('d-none');
+            textoConfirm.innerText = res.message;
+          } else {
+            status.innerHTML = `<span class="text-danger">Erro: ${res.message}</span>`;
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-save"></i> SALVAR USO DO CARRO';
+          status.innerHTML = `<span class="text-danger">Erro no servidor: ${err}</span>`;
+        })
+        .salvarUsoCarroNoServidor(dadosPendentesUsoCarro);
+    }
+
+    function zerarCreditosCombustivel(event) {
+      if (typeof window.creditosAtuaisJerry === 'undefined' || typeof window.creditosAtuaisLarissa === 'undefined') {
+        alert("Os créditos ainda estão sendo carregados. Aguarde um momento.");
+        return;
+      }
+      
+      let credJ = window.creditosAtuaisJerry;
+      let credL = window.creditosAtuaisLarissa;
+      
+      let diferenca = Math.abs(credJ - credL);
+      let pagador = credJ >= credL ? 'Jerry' : 'Larissa';
+      
+      // Textos dinâmicos baseados no valor da discrepância
+      let msg = `⚠️ ATENÇÃO: ZERAMENTO DE CRÉDITOS\n\n`;
+      msg += `Atualmente, Jerry tem ${BRL.format(credJ)} e Larissa tem ${BRL.format(credL)} em créditos.\n\n`;
+      
+      if (diferenca < 0.01) {
+        msg += `Não há discrepância de valores. O sistema lançará apenas um marco zerado para reiniciar a contagem. Deseja prosseguir?`;
+      } else {
+        msg += `Isso gera uma discrepância de ${BRL.format(diferenca)}. Essa diferença ocorre porque os cálculos de consumo do carro são estimativas, além da possibilidade de os tanques terem sido completados antes do início das contagens.\n\n`;
+        msg += `Para que ninguém saia no prejuízo sozinho, o sistema registrará um gasto de ${BRL.format(diferenca)}, onde ${pagador} constará como pagador, e o valor será dividido 50/50.\n`;
+        msg += `Assim, a discrepância é absorvida por ambos, e os placares de crédito iniciarão do zero. Deseja gerar o ajuste?`;
+      }
+      
+      if (!confirm(msg)) {
+        return;
+      }
+      
+      // Captura e trava o botão visualmente
+      const btn = event.currentTarget;
+      const textoOriginal = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Zerando placar...';
+      
+      const pad = (n) => n < 10 ? '0' + n : n;
+      let d = new Date();
+      const offset = d.getTimezoneOffset();
+      const strData = new Date(d.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+      const horaStr = pad(d.getHours()) + ":" + pad(d.getMinutes());
+      
+      // Monta o "Gasto"
+      const dadosAjuste = {
+        idUnico: null,
+        descricao: '♻️ Ajuste e Zeramento de Créditos de Combustível', // Esta frase é a chave mágica da parada!
+        dataGasto: strData, 
+        horario: horaStr, 
+        categoria: '',
+        forma: 'calculo',
+        valorTotal: diferenca,
+        jerry: diferenca / 2, 
+        larissa: diferenca / 2,
+        pagador: pagador
+      };
+      
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false;
+          btn.innerHTML = textoOriginal;
+          if (res.success) {
+            alert("✅ Ajuste lançado com sucesso! Os placares de crédito foram reiniciados.");
+            carregarDashboard(); // Força recarregar os dados do servidor. O novo gasto descerá e zerará a tela automaticamente.
+          } else {
+            alert("Erro ao lançar o ajuste: " + res.message);
+          }
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = textoOriginal;
+          alert("Erro no servidor: " + err);
+        })
+        .salvarGasto(dadosAjuste);
+    }
+
+    // LÓGICA DE EXCLUSÃO (LONG PRESS) DO USO DO CARRO
+    let timerLongPressUso = null;
+    let startXUso = 0;
+    let startYUso = 0;
+    let foiRolagemUso = false;
+
+    function iniciarPressaoUsoCarro(e, idGasto, carro) {
+      if (e.button && e.button !== 0) return; // Ignora clique direito do mouse
+      const coords = obterCoordenadas(e);
+      startXUso = coords.x;
+      startYUso = coords.y;
+      foiRolagemUso = false;
+
+      timerLongPressUso = setTimeout(() => {
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        confirmarExclusaoUsoCarro(idGasto, carro);
+        timerLongPressUso = null;
+      }, 600); // 600ms de pressão aciona a exclusão
+    }
+
+    function cancelarPressaoUsoCarroSeMovel(e) {
+      const coords = obterCoordenadas(e);
+      if (coords.x === undefined) return;
+      if (Math.abs(coords.x - startXUso) > 10 || Math.abs(coords.y - startYUso) > 10) {
+        foiRolagemUso = true;
+        if (timerLongPressUso) { clearTimeout(timerLongPressUso); timerLongPressUso = null; }
+      }
+    }
+
+    function cancelarPressaoUsoCarroTotal(e) {
+      if (timerLongPressUso) { clearTimeout(timerLongPressUso); timerLongPressUso = null; }
+      foiRolagemUso = false;
+    }
+
+    function finalizarPressaoUsoCarro(e) {
+      if (timerLongPressUso) { clearTimeout(timerLongPressUso); timerLongPressUso = null; }
+    }
+
+    function confirmarExclusaoUsoCarro(idGasto, carro) {
+      if (!idGasto || idGasto === "undefined") {
+        alert("Não é possível excluir registros basais ou antigos que não possuem ID.");
+        return;
+      }
+      
+      if (confirm("Tem certeza que deseja excluir este registro de uso do carro?\n\nO gasto associado na aba de Gastos também irá para a Lixeira.")) {
+        
+        const divLista = document.getElementById('listaUltimosUsosCarro');
+        divLista.innerHTML = '<div class="text-center text-muted fst-italic small mt-2"><div class="spinner-border spinner-border-sm text-danger"></div> Excluindo em cadeia...</div>';
+
+        google.script.run
+          .withSuccessHandler((res) => {
+            if (res && res.success) {
+              carregarHistoricoCarro(carro); // Atualiza a lista da tela
+              carregarDashboard(); // Puxa novamente os dados pro sistema principal remover do balanço
+            } else {
+              alert("Erro ao excluir: " + (res ? res.message : "Erro desconhecido"));
+              carregarHistoricoCarro(carro);
+            }
+          })
+          .withFailureHandler((err) => {
+            alert("Erro no servidor: " + err);
+            carregarHistoricoCarro(carro);
+          })
+          .excluirUsoCarroServidor(idGasto);
+      }
+    }
+
+    // SISTEMA DE EDIÇÃO
+    function copiarIdGasto() {
+      if (idUnicoEdicao) {
+        navigator.clipboard.writeText(idUnicoEdicao).then(() => {
+          const btn = document.getElementById('btnCopiarId');
+          
+          // Muda para o estado de sucesso
+          btn.innerHTML = '<i class="bi bi-check2"></i> Copiado!';
+          btn.classList.replace('border-secondary', 'border-success');
+          btn.classList.replace('text-secondary', 'text-success');
+          
+          // Volta ao normal após 2 segundos
+          setTimeout(() => {
+            btn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar ID do Gasto';
+            btn.classList.replace('border-success', 'border-secondary');
+            btn.classList.replace('text-success', 'text-secondary');
+          }, 2000);
+          
+        }).catch(err => {
+          alert("Erro ao copiar ID: " + err);
+        });
+      }
+    }
+
+    function abrirEdicao(idGastoClick) {
+      posicaoScroll = window.scrollY; // Salva a posição exata da tela antes de mudar
+      telaOrigemEdicao = abaAtual;
+      
+      // NOVO: Busca o item no histórico global OU nos resultados da pesquisa
+      let item = historicoGlobal.find(it => it.idUnico === idGastoClick);
+      if (!item && window.resultadosPesquisa) {
+         item = window.resultadosPesquisa.find(it => it.idUnico === idGastoClick);
+      }
+      
+      if (!item) {
+         alert("Gasto não encontrado na memória. Atualize a página.");
+         return;
+      }
+      
+      idUnicoEdicao = item.idUnico;
+      
+      // FORÇA A EXIBIÇÃO DA FAIXA AMARELA DE EDIÇÃO CORRETAMENTE
+      const alerta = document.getElementById('alertaEdicao');
+      if (alerta) {
+        alerta.classList.remove('d-none');
+        alerta.classList.add('d-flex');
+      }
+      document.getElementById('textoAlertaTopo').innerHTML = '<i class="bi bi-pencil-square me-1"></i>Editando';
+      document.getElementById('btnExcluir').classList.remove('d-none');
+      document.getElementById('btnDesmembrar').classList.remove('d-none');
+      document.getElementById('boxCopiarId').classList.remove('d-none'); 
+      
+      const btnSalvar = document.getElementById('btnSalvar');
+      if (item.isLixeira) {
+        editandoLixeira = true;
+        btnSalvar.classList.replace('btn-primary', 'btn-success');
+        btnSalvar.querySelector('i').className = 'bi bi-arrow-counterclockwise';
+        document.getElementById('textoBtnSalvar').innerText = "RESTAURAR DA LIXEIRA"; 
+      } else {
+        editandoLixeira = false;
+        btnSalvar.classList.replace('btn-success', 'btn-primary');
+        btnSalvar.querySelector('i').className = 'bi bi-save';
+        document.getElementById('textoBtnSalvar').innerText = "ATUALIZAR GASTO ANTIGO"; 
+      } 
+      
+      document.getElementById('descricao').value = item.desc;
+      document.getElementById('valorTotal').value = item.valor.toFixed(2).replace('.', ',');
+      document.getElementById('dataCustom').value = item.dataRaw;
+      // NOVO: Preenche o campo de horário, limitando a HH:mm
+      document.getElementById('horaCustom').value = item.horario ? item.horario.substring(0, 5) : "";
+      
+      aplicarUsuario(item.pagador);
+      
+      if(document.querySelector(`input[name="forma"][value="${item.forma}"]`)) {
+        document.querySelector(`input[name="forma"][value="${item.forma}"]`).checked = true;
+      }
+      if(document.querySelector(`input[name="categoria"][value="${item.cat}"]`)) {
+        document.querySelector(`input[name="categoria"][value="${item.cat}"]`).checked = true;
+        aoMudarCategoria(item.cat, true);
+// O 'true' pula a rolagem automática de tela
+      } else {
+        aoMudarCategoria('', true);
+// Destrava a tela se a categoria original for outra
+      }
+
+      // Detecção Automática de Gasto vs Ressarcimento ao carregar
+      if (item.valor < -0.01) {
+        document.getElementById('tipoRessarcimento').checked = true;
+      } else {
+        document.getElementById('tipoGasto').checked = true;
+      }
+
+      document.getElementById('cotaJerry').value = item.cotaJerry.toFixed(3).replace('.', ',');
+      document.getElementById('cotaLarissa').value = item.cotaLarissa.toFixed(3).replace('.', ',');
+      
+      calcularPreview();
+      atualizarListaReferencia();
+      switchTab('lancar');
+    }
+
+    
+    // Botão Único de Cancelar (Serve para Novo e Edição)
+    function cancelarEdicao() {
+      const btn = document.getElementById('btnCancelarEdicao');
+      if (btn) {
+        btn.disabled = true; // Apenas esmaece o botão sem mudar o tamanho
+      }
+      setTimeout(() => {
+        idUnicoEdicao = null;
+        document.getElementById('textoBtnSalvar').innerText = "CONFIRMAR GASTO";
+        document.getElementById('formGasto').reset();
+        
+        if (btn) {
+          btn.disabled = false; // Restaura o botão
+        }
+        
+        aplicarPadroesUI();
+        
+        // Retorna sempre para a aba que o usuário estava antes de abrir a tela, restaurando o scroll
+        switchTab(abaAtual, true);
+        // Garante que o scroll aconteça antes do primeiro quadro ser desenhado, sem piscar a tela
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: posicaoScroll, behavior: 'instant' });
+        });
+      }, 120);
+    }
+    
+    
+
+    // Botão Excluir na Edição
+    function confirmarExclusao() {
+      if (!idUnicoEdicao) return;
+      if (!confirm("Tem certeza de que deseja excluir este gasto definitivamente?")) return;
+
+      const btnExcluir = document.getElementById('btnExcluir');
+      btnExcluir.disabled = true; // Apenas esmaece o botão
+
+      const idParaExcluir = idUnicoEdicao;
+
+      // --- NOVO: Captura os dados da tela para enviar à lixeira com as edições ---
+      const radioPagadorAtivo = document.querySelector('input[name="pagadorRadio"]:checked');
+      const radioCat = document.querySelector('input[name="categoria"]:checked');
+      const radioForma = document.querySelector('input[name="forma"]:checked');
+      
+      const dadosEditados = {
+        idUnico: idParaExcluir,
+        descricao: document.getElementById('descricao').value,
+        dataGasto: getSelectedDate(),
+        horario: document.getElementById('horaCustom').value,
+        categoria: radioCat ? radioCat.value : "",
+        forma: radioForma ? radioForma.value : "",
+        valorTotal: lerNumeroSeguro('valorTotal'),
+        jerry: lerNumeroSeguro('cotaJerry'),
+        larissa: lerNumeroSeguro('cotaLarissa'),
+        pagador: radioPagadorAtivo ? radioPagadorAtivo.value : ""
+      };
+
+      // --- NOVO: Ajusta o balanço global antes de remover o item da memória ---
+      let itemParaExcluir = historicoGlobal.find(it => it.idUnico === idParaExcluir);
+      if (!itemParaExcluir && window.resultadosPesquisa) {
+        itemParaExcluir = window.resultadosPesquisa.find(it => it.idUnico === idParaExcluir);
+      }
+
+      if (itemParaExcluir && typeof window.balancoGlobalExato !== 'undefined') {
+        const impactoAntigoJerry = (itemParaExcluir.pagador === 'Jerry') ? itemParaExcluir.cotaLarissa : -itemParaExcluir.cotaJerry;
+        window.balancoGlobalExato = window.balancoGlobalExato - impactoAntigoJerry;
+        
+        atualizarSaldoTopo();
+      }
+
+      // Remove da memória local imediatamente
+      historicoGlobal = historicoGlobal.filter(it => it.idUnico !== idParaExcluir);
+      window.historicoGlobal = historicoGlobal;
+
+      idUnicoEdicao = null;
+      document.getElementById('alertaEdicao').classList.add('d-none');
+      document.getElementById('textoBtnSalvar').innerText = "CONFIRMAR GASTO";
+      document.getElementById('formGasto').reset();
+      
+      // Restaura o botão de excluir para o estado original para o próximo uso
+      btnExcluir.disabled = false;
+
+      aplicarPadroesUI();
+      
+      // NOVO: Re-renderiza as listas para os cards ficarem sincronizados com o array atualizado
+      // Re-renderização imediata sincronizada
+      if (dashboardRenderizado || abaAtual === 'dashboard') {
+        renderizarListaHistorico();
+      }
+      if (ultimasEditadasRenderizado || abaAtual === 'ultimasEditadas') {
+        renderizarListaUltimasEditadas();
+      }
+      if (jerryRenderizado || abaAtual === 'despesasJerry') {
+        renderizarListaJerry();
+      }
+      if (larissaRenderizado || abaAtual === 'despesasLarissa') {
+        renderizarListaLarissa();
+      }
+      renderizarListaCategorizar();
+      atualizarListaReferencia();
+
+      // NOVO: Remove o card da tela de Pesquisa Avançada, caso ele estivesse lá
+      if (window.resultadosPesquisa) {
+        window.resultadosPesquisa = window.resultadosPesquisa.filter(it => it.idUnico !== idParaExcluir);
+        const listaPesquisa = document.getElementById('listaPesquisa');
+        if (listaPesquisa) {
+          if (window.resultadosPesquisa.length > 0) {
+            let htmlPesq = `<div class="text-muted small fw-bold mb-3">${window.resultadosPesquisa.length} resultado(s) retornado(s)</div>`;
+            window.resultadosPesquisa.forEach((it, i) => { htmlPesq += montarCardGastoHtml(it, i); });
+            listaPesquisa.innerHTML = htmlPesq;
+          } else {
+            listaPesquisa.innerHTML = '<div class="text-center text-muted fst-italic">Nenhum resultado restante.</div>';
+          }
+        }
+      }
+
+      // Volta imediatamente para a tela
+      switchTab(telaOrigemEdicao, true);
+      
+      // Garante que o scroll aconteça antes do primeiro quadro ser desenhado, sem piscar a tela
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: posicaoScroll, behavior: 'instant' });
+      });
+
+      // Exclui no Sheets em background enviando o estado editado
+      google.script.run
+        .withFailureHandler(err => alert("Erro ao sincronizar exclusão: " + err))
+        .excluirGasto(idParaExcluir, dadosEditados);
+    }
+    
+    
+
+    function montarCardGastoHtml(item, index) {
+      const estaSelecionado = selecionadosLote.has(item.idUnico);
+      const classeSelecao = estaSelecionado ? 'border-primary border-3 bg-primary-subtle shadow' : '';
+      const badgeSelecao = estaSelecionado ? '<span class="badge bg-primary rounded-circle p-2 position-absolute top-0 end-0 m-2 shadow"><i class="bi bi-check-lg fs-5"></i></span>' : '';
+
+      const corPagador = item.pagador === 'Jerry' ? 'bg-primary' : 'bg-pink';
+      
+      let estiloForma = 'background-color: #6c757d; color: #ffffff;';
+      if (item.forma) {
+        if (item.forma.includes('credito nubank')) {
+          estiloForma = 'background-color: #820ad1; color: #ffffff;';
+        } else if (item.forma.includes('conta nubank')) {
+          estiloForma = 'background-color: #007a87; color: #ffffff;';
+        } else if (item.forma.includes('credito BB')) {
+          estiloForma = 'background-color: #1a42c6; color: #ffffff;';
+        } else if (item.forma.includes('conta BB')) {
+          estiloForma = 'background-color: #fae128; color: #000000;';
+        } else if (item.forma.includes('calculo')) {
+          estiloForma = 'background-color: #d97706; color: #ffffff;';
+        }
+      }
+      
+      const htmlJerry = item.cotaJerry > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
+      const htmlLarissa = item.cotaLarissa > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
+      const textoCategoria = item.cat ? item.cat : '<span class="text-danger fst-italic">⚠️ Sem categoria</span>';
+      const horarioDisplay = item.horario ? `<div class="text-secondary mt-1"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
+      const badgeLixeira = item.isLixeira ? '<div class="mb-2"><span class="badge bg-danger shadow-sm px-2 py-1"><i class="bi bi-trash"></i> Da Lixeira</span></div>' : '';
+
+      return `
+        <div class="card mb-3 shadow-sm border-card rounded-4 bg-body position-relative ${classeSelecao}"
+             onpointerdown="iniciarPressaoLote(event, '${item.idUnico}')"
+             onpointerup="finalizarPressaoLote(event, '${item.idUnico}')"
+             onpointermove="cancelarPressaoLoteSeMovel(event)"
+             onpointercancel="cancelarPressaoLoteTotal(event)"
+             oncontextmenu="event.preventDefault()">
+          ${badgeSelecao}
+          <div class="card-body p-3">
+            ${badgeLixeira}
+            <h6 class="card-title mb-3 fw-bold lh-sm text-wrap fs-5">${item.desc}</h6>
+          
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <div class="d-flex flex-column gap-2 overflow-hidden me-2" style="min-width: 0;">
+                <div class="small fw-semibold text-truncate">${textoCategoria}</div>
+                <div class="d-flex flex-wrap gap-2">
+                  <span class="badge ${corPagador} shadow-sm px-2 py-1 text-truncate" style="max-width: 100%;"><i class="bi bi-person-fill"></i> ${item.pagador}</span>
+                  <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
+                </div>
+              </div>
+              <div class="text-end fw-bold flex-shrink-0 ms-auto" style="font-size: 0.95rem;">
+                <div class="text-body"><i class="bi bi-calendar-event"></i> ${item.data}</div>
+                ${horarioDisplay}
+              </div>
+            </div>
+            
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-muted fw-bold" style="font-size: 0.8rem;">
+                ${htmlJerry}
+                ${htmlLarissa}
+              </div>
+        
+              <div class="text-end text-primary">
+                <div class="fw-bold fs-4 lh-1">${BRL.format(item.valor)}</div>
+              </div>
+            </div>
+            
+            <div class="text-center mt-2 border-top pt-2">
+              <small class="text-muted fst-italic" style="font-size: 0.65rem;">ID Planilha: ${item.idUnico}</small>
+            </div>
+
+          </div>
+        </div>
+      `;
+    }
+
+    // DASHBOARD & CATEGORIZAR
+    function renderizarListaHistorico() {
+      const listaHistorico = document.getElementById('listaHistorico');
+      if (!listaHistorico || !historicoGlobal) return;
+      
+      let htmlHistorico = "";
+      const limiteDash = Math.min(historicoGlobal.length, 150);
+      for (let i = 0; i < limiteDash; i++) {
+        htmlHistorico += montarCardGastoHtml(historicoGlobal[i], i);
+      }
+      listaHistorico.innerHTML = htmlHistorico;
+      dashboardRenderizado = true;
+    }
+
+    // NOVA FUNÇÃO: Ordena puramente pelo momento da edição
+    function renderizarListaUltimasEditadas() {
+      const lista = document.getElementById('listaUltimasEditadas');
+      if (!lista || !historicoGlobal) return;
+
+      // Cria uma cópia do array e ordena pelo tsEdicao (decrescente: do mais recente para o mais antigo)
+      const ordenado = [...historicoGlobal].sort((a, b) => (b.tsEdicao || 0) - (a.tsEdicao || 0));
+
+      let html = "";
+      const limiteDash = Math.min(ordenado.length, 150); // Exibe os 150 últimos editados
+      for (let i = 0; i < limiteDash; i++) {
+        html += montarCardGastoHtml(ordenado[i], i);
+      }
+      if (html === "") html = "<div class='text-center text-muted fw-bold mt-4'>Nenhum gasto encontrado.</div>";
+      lista.innerHTML = html;
+      ultimasEditadasRenderizado = true;
+    }
+
+
+    function renderizarListaJerry() {
+      const lista = document.getElementById('listaDespesasJerry');
+      if (!lista || !historicoGlobal) return;
+      let html = "";
+      // Filtra apenas gastos onde a cota do Jerry é maior que 0.01
+      const filtrados = historicoGlobal.filter(item => item.cotaJerry > 0.01);
+      const limite = Math.min(filtrados.length, 150); 
+      for (let i = 0; i < limite; i++) {
+        html += montarCardGastoHtml(filtrados[i], i);
+      }
+      if (html === "") html = "<div class='text-center text-muted fw-bold mt-4'>Nenhuma despesa para Jerry.</div>";
+      lista.innerHTML = html;
+      jerryRenderizado = true;
+    }
+
+    function renderizarListaLarissa() {
+      const lista = document.getElementById('listaDespesasLarissa');
+      if (!lista || !historicoGlobal) return;
+      let html = "";
+      // Filtra apenas gastos onde a cota da Larissa é maior que 0.01
+      const filtrados = historicoGlobal.filter(item => item.cotaLarissa > 0.01);
+      const limite = Math.min(filtrados.length, 150);
+      for (let i = 0; i < limite; i++) {
+        html += montarCardGastoHtml(filtrados[i], i);
+      }
+      if (html === "") html = "<div class='text-center text-muted fw-bold mt-4'>Nenhuma despesa para Larissa.</div>";
+      lista.innerHTML = html;
+      larissaRenderizado = true;
+    }
+
+
+    function carregarDashboard() {
+      const listaHistorico = document.getElementById('listaHistorico');
+      const listaCategorizar = document.getElementById('listaCategorizar');
+      
+      listaHistorico.innerHTML = "<div class='text-center'>Carregando...</div>";
+      if (listaCategorizar) listaCategorizar.innerHTML = "<div class='text-center'>Carregando...</div>";
+      
+      google.script.run
+        .withSuccessHandler(function(dados) {
+          if (!dados || !dados.sucesso) { 
+            document.getElementById('dashAcertoStatus').innerText = "Sem dados"; 
+            return; 
+          }
+
+          historicoGlobal = dados.historico; 
+          window.historicoGlobal = dados.historico;
+          atualizarListaReferencia();
+          
+          const balanco = dados.balancoLiquido;
+          window.balancoGlobalExato = balanco; // NOVO: Armazena o valor real calculado pelo servidor
+          atualizarSaldoTopo();
+
+          // Reseta as flags pois recebemos novos dados do servidor
+          dashboardRenderizado = false; 
+          ultimasEditadasRenderizado = false;
+          jerryRenderizado = false;
+          larissaRenderizado = false;
+          
+          if (abaAtual === 'dashboard') {
+            renderizarListaHistorico();
+          } else if (abaAtual === 'ultimasEditadas') {
+            renderizarListaUltimasEditadas();
+          } else {
+            listaHistorico.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
+            const listaUlt = document.getElementById('listaUltimasEditadas');
+            if (listaUlt) listaUlt.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
+          }
+
+          // Renderiza a lista de categorizar respeitando o filtro ativo (Todos, Jerry ou Larissa)
+          renderizarListaCategorizar();
+          if(typeof calcularCreditosCombustivel === 'function') calcularCreditosCombustivel();
+        }).getDashboardData();
+    }
+
+    // LIXEIRA
+    let lixeiraGlobal = [];
+    let ordemLixeiraAtual = 'exclusao';
+
+    function carregarLixeira() {
+      const lista = document.getElementById('listaLixeira');
+      if (lista) lista.innerHTML = "<div class='text-center text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>A carregar lixeira...</div>";
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (!res || res.erro) {
+            if (lista) lista.innerHTML = `<div class='alert alert-danger'>${res ? res.erro : 'Erro ao carregar lixeira.'}</div>`;
+            return;
+          }
+          lixeiraGlobal = res.itens || [];
+          renderizarLixeira();
+        })
+        .withFailureHandler(err => {
+          if (lista) lista.innerHTML = `<div class='alert alert-danger'>Erro no servidor: ${err}</div>`;
+        })
+        .getLixeiraData();
+    }
+
+    function alterarOrdemLixeira(modo) {
+      ordemLixeiraAtual = modo;
+      renderizarLixeira();
+    }
+
+    function renderizarLixeira() {
+      const lista = document.getElementById('listaLixeira');
+      if (!lista) return;
+
+      if (!lixeiraGlobal || lixeiraGlobal.length === 0) {
+        lista.innerHTML = `
+          <div class="alert alert-secondary text-center border-0 rounded-4 shadow-sm p-4 mt-2">
+            <i class="bi bi-trash fs-2 text-muted d-block mb-2"></i>
+            <span class="fw-bold">A lixeira está vazia.</span>
+          </div>`;
+        return;
+      }
+
+      // Ordena de acordo com o chip selecionado
+      lixeiraGlobal.sort((a, b) => {
+        if (ordemLixeiraAtual === 'gasto') {
+          return b.tsGasto - a.tsGasto;
+        } else {
+          return b.tsExclusao - a.tsExclusao;
+        }
+      });
+
+      let html = "";
+      lixeiraGlobal.forEach((item, idx) => {
+        html += montarCardLixeiraHtml(item, idx);
+      });
+      lista.innerHTML = html;
+    }
+
+    function montarCardLixeiraHtml(item, index) {
+      const corPagador = item.pagador === 'Jerry' ? 'bg-primary' : 'bg-pink';
+
+      let estiloForma = 'background-color: #6c757d; color: #ffffff;';
+      if (item.forma) {
+        if (item.forma.includes('credito nubank')) {
+          estiloForma = 'background-color: #820ad1; color: #ffffff;';
+        } else if (item.forma.includes('conta nubank')) {
+          estiloForma = 'background-color: #007a87; color: #ffffff;';
+        } else if (item.forma.includes('credito BB')) {
+          estiloForma = 'background-color: #1a42c6; color: #ffffff;';
+        } else if (item.forma.includes('conta BB')) {
+          estiloForma = 'background-color: #fae128; color: #000000;';
+        } else if (item.forma.includes('calculo')) {
+          estiloForma = 'background-color: #d97706; color: #ffffff;';
+        }
+      }
+
+      const htmlJerry = item.cotaJerry > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
+      const htmlLarissa = item.cotaLarissa > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
+      const textoCategoria = item.cat ? item.cat : '<span class="text-danger fst-italic">⚠️ Sem categoria</span>';
+      const horarioDisplay = item.horario ? `<div class="text-secondary mt-1"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
+      
+      const isDesmembrado = item.motivo === "DESMEMBRADO";
+      const iconeExclusao = isDesmembrado ? "bi-layout-split" : "bi-trash-fill";
+      const textoExclusao = isDesmembrado ? "Desmembrado em:" : "Excluído em:";
+      const corExclusao = isDesmembrado ? "text-warning" : "text-danger";
+      
+      const dataExclusaoLabel = item.dataExclusao ? `<div class="${corExclusao} small fw-bold mb-2"><i class="bi ${iconeExclusao} me-1"></i> ${textoExclusao} ${item.dataExclusao}</div>` : '';
+
+      return `
+        <div class="card mb-3 shadow-sm border-card rounded-4 bg-body">
+          <div class="card-body p-3">
+            ${dataExclusaoLabel}
+            <h6 class="card-title mb-3 fw-bold lh-sm text-wrap fs-5">${item.desc}</h6>
+            
+            <div class="d-flex justify-content-between align-items-start mb-3">
+              <div class="d-flex flex-column gap-2 overflow-hidden me-2" style="min-width: 0;">
+                <div class="small fw-semibold text-truncate">${textoCategoria}</div>
+                <div class="d-flex flex-wrap gap-2">
+                  <span class="badge ${corPagador} shadow-sm px-2 py-1 text-truncate" style="max-width: 100%;"><i class="bi bi-person-fill"></i> ${item.pagador}</span>
+                  <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
+                </div>
+              </div>
+              <div class="text-end fw-bold flex-shrink-0 ms-auto" style="font-size: 0.95rem;">
+                <div class="text-body"><i class="bi bi-calendar-event"></i> ${item.data}</div>
+                ${horarioDisplay}
+              </div>
+            </div>
+            
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="text-muted fw-bold" style="font-size: 0.8rem;">
+                ${htmlJerry}
+                ${htmlLarissa}
+              </div>
+              <div class="text-end text-primary">
+                <div class="fw-bold fs-4 lh-1">${BRL.format(item.valor)}</div>
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center border-top pt-2">
+              <small class="text-muted fst-italic" style="font-size: 0.65rem;">ID: ${item.idUnico}</small>
+              <button type="button" class="btn btn-sm btn-outline-success rounded-pill fw-bold px-3" id="btnRestaurar-${item.idUnico}" onclick="restaurarGastoFrontend('${item.idUnico}')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      `;
+    }
+
+    function restaurarGastoFrontend(idUnico) {
+      const btn = document.getElementById(`btnRestaurar-${idUnico}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>A restaurar...';
+      }
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res && res.success) {
+            // Remove da lixeira em memória e re-renderiza a lixeira
+            lixeiraGlobal = lixeiraGlobal.filter(it => it.idUnico !== idUnico);
+            renderizarLixeira();
+            // Atualiza os dados do dashboard em segundo plano para refletir o gasto restaurado
+            carregarDashboard();
+          } else {
+            alert("Erro ao restaurar: " + (res ? res.message : "Erro desconhecido"));
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar';
+            }
+          }
+        })
+        .withFailureHandler(err => {
+          alert("Erro no servidor: " + err);
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar';
+          }
+        })
+        .restaurarGasto(idUnico);
+    }
+
+    // LÓGICA DE SELEÇÃO MÚLTIPLA E EDIÇÃO EM LOTE
+    let timerLongPress = null;
+    let startXLote = 0;
+    let startYLote = 0;
+    let modoSelecaoLote = false;
+    let longPressAtivado = false;
+    let selecionadosLote = new Set();
+    let foiRolagem = false;
+
+    // NOVO: Função para pegar coordenadas com segurança (Mouse e Mobile)
+    function obterCoordenadas(e) {
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+      }
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function iniciarPressaoLote(e, idUnico) {
+      if (e.button && e.button !== 0) return; 
+      const coords = obterCoordenadas(e);
+      startXLote = coords.x;
+      startYLote = coords.y;
+      longPressAtivado = false;
+      foiRolagem = false;
+
+      if (modoSelecaoLote) return;
+
+      timerLongPress = setTimeout(() => {
+        longPressAtivado = true;
+        modoSelecaoLote = true;
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        if (typeof alternarSelecaoLote === "function") alternarSelecaoLote(idUnico);
+        timerLongPress = null;
+      }, 500);
+    }
+
+    function cancelarPressaoLoteSeMovel(e) {
+      const coords = obterCoordenadas(e);
+      if (coords.x === undefined) return;
+
+      const moveX = Math.abs(coords.x - startXLote);
+      const moveY = Math.abs(coords.y - startYLote);
+      
+      if (moveX > 10 || moveY > 10) {
+        foiRolagem = true; 
+        if (timerLongPress) {
+          clearTimeout(timerLongPress);
+          timerLongPress = null; 
+        }
+      }
+    }
+
+    function cancelarPressaoLoteTotal(e) {
+      if (timerLongPress) {
+        clearTimeout(timerLongPress);
+        timerLongPress = null;
+      }
+      foiRolagem = false;
+    }
+
+    function finalizarPressaoLote(e, idUnico) {
+      console.log("1. Soltou o dedo/mouse. ID:", idUnico);
+
+      if (timerLongPress) {
+        clearTimeout(timerLongPress);
+        timerLongPress = null;
+      }
+
+      if (longPressAtivado) {
+        console.log("2. Bloqueado: Foi um toque longo.");
+        return;
+      }
+
+      if (foiRolagem) {
+        console.log("3. Bloqueado: Foi detectada rolagem.");
+        return;
+      }
+
+      if (modoSelecaoLote) {
+        console.log("4. Modo seleção ativo, alternando card.");
+        if (typeof alternarSelecaoLote === "function") alternarSelecaoLote(idUnico);
+        return;
+      }
+
+      console.log("5. SUCESSO! Indo para abrirEdicao...");
+      abrirEdicao(idUnico);
+    }
+
+    function alternarSelecaoLote(idUnico) {
+      if (selecionadosLote.has(idUnico)) {
+        selecionadosLote.delete(idUnico);
+      } else {
+        selecionadosLote.add(idUnico);
+      }
+
+      if (selecionadosLote.size === 0) {
+        cancelarSelecaoLote();
+        return;
+      }
+
+      modoSelecaoLote = true;
+      
+      // Atualiza os contadores
+      document.getElementById('qtdSelecionadosLote').innerText = selecionadosLote.size;
+      const fabLoteCount = document.getElementById('qtdFabLote');
+      if (fabLoteCount) fabLoteCount.innerText = selecionadosLote.size;
+
+      // Mostra o grupo de botões flutuantes (apenas se a barra de lote inferior estiver escondida)
+      const containerFabs = document.getElementById('containerFabsLote');
+      const barra = document.getElementById('barraAcoesEmLote');
+      if (containerFabs && barra && barra.classList.contains('d-none')) {
+        containerFabs.classList.remove('d-none');
+      }
+      
+      // Esconde o FAB de adicionar
+      const fabAdd = document.getElementById('fabAdd');
+      if (fabAdd) fabAdd.classList.add('d-none');
+
+      atualizarCardsTelaAtiva();
+    }
+
+    function abrirPainelLote() {
+      // Esconde os botões flutuantes e sobe a barra de ações
+      const containerFabs = document.getElementById('containerFabsLote');
+      if (containerFabs) containerFabs.classList.add('d-none');
+      
+      const barra = document.getElementById('barraAcoesEmLote');
+      if (barra) barra.classList.remove('d-none');
+    }
+
+    function cancelarSelecaoLote() {
+      modoSelecaoLote = false;
+      selecionadosLote.clear();
+      
+      // Esconde a barra inferior
+      const barra = document.getElementById('barraAcoesEmLote');
+      if (barra) barra.classList.add('d-none');
+      
+      // Esconde o grupo de botões de edição em lote
+      const containerFabs = document.getElementById('containerFabsLote');
+      if (containerFabs) containerFabs.classList.add('d-none');
+      
+      // Restaura o FAB de adicionar normal apenas na tela de Pendências
+      const fabAdd = document.getElementById('fabAdd');
+      if (fabAdd && abaAtual === 'categorizar') fabAdd.classList.remove('d-none');
+
+      // Reseta os campos de edição
+      const loteCat = document.getElementById('loteCategoria');
+      const loteDiv = document.getElementById('loteDivisao');
+      if (loteCat) loteCat.value = "";
+      if (loteDiv) loteDiv.value = "";
+
+      atualizarCardsTelaAtiva();
+    }
+
+    function atualizarCardsTelaAtiva() {
+      if (abaAtual === 'categorizar') renderizarListaCategorizar();
+      else if (abaAtual === 'dashboard') renderizarListaHistorico();
+      else if (abaAtual === 'ultimasEditadas') renderizarListaUltimasEditadas();
+      else if (abaAtual === 'despesasJerry') renderizarListaJerry();
+      else if (abaAtual === 'despesasLarissa') renderizarListaLarissa();
+      else if (abaAtual === 'lixeira') renderizarLixeira();
+      else if (abaAtual === 'pesquisar' && window.resultadosPesquisa) {
+        const listaPesquisa = document.getElementById('listaPesquisa');
+        if (listaPesquisa && window.resultadosPesquisa.length > 0) {
+          let htmlPesq = `<div class="text-muted small fw-bold mb-3">${window.resultadosPesquisa.length} resultado(s) retornado(s)</div>`;
+          window.resultadosPesquisa.forEach((it, i) => { htmlPesq += montarCardGastoHtml(it, i); });
+          listaPesquisa.innerHTML = htmlPesq;
+        }
+      }
+    }
+
+    function aplicarEdicaoLoteFrontend() {
+      if (selecionadosLote.size === 0) return;
+
+      const novaCat = document.getElementById('loteCategoria').value;
+      const novaDiv = document.getElementById('loteDivisao').value;
+
+      if (!novaCat && !novaDiv) {
+        alert("Selecione uma categoria ou divisão para aplicar aos selecionados.");
+        return;
+      }
+
+      const btn = document.getElementById('btnSalvarLote');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>A aplicar...';
+
+      const idsArr = Array.from(selecionadosLote);
+
+      idsArr.forEach(id => {
+        let idx = historicoGlobal.findIndex(item => item.idUnico === id);
+        
+        // Se o card veio da pesquisa e não está no histórico, injeta ele no topo
+        if (idx === -1 && window.resultadosPesquisa) {
+          const itemPesq = window.resultadosPesquisa.find(it => it.idUnico === id);
+          if (itemPesq) {
+            historicoGlobal.unshift(itemPesq);
+            idx = 0;
+          }
+        }
+
+        if (idx !== -1) {
+          const item = historicoGlobal[idx];
+          const impactoAntigoJerry = (item.pagador === 'Jerry') ? item.cotaLarissa : -item.cotaJerry;
+
+          if (novaCat === 'REMOVER_CATEGORIA') {
+            item.cat = "";
+          } else if (novaCat) {
+            item.cat = novaCat;
+          }
+
+          if (novaDiv) {
+            if (novaDiv === '100_jerry') {
+              item.cotaJerry = item.valor;
+              item.cotaLarissa = 0;
+            } else if (novaDiv === '100_larissa') {
+              item.cotaJerry = 0;
+              item.cotaLarissa = item.valor;
+            } else if (novaDiv === '50_50') {
+              item.cotaJerry = item.valor / 2;
+              item.cotaLarissa = item.valor / 2;
+            }
+          }
+
+          item.tsEdicao = new Date().getTime(); // Atualiza a hora da edição na memória local instantaneamente
+
+          const impactoNovoJerry = (item.pagador === 'Jerry') ? item.cotaLarissa : -item.cotaJerry;
+          if (typeof window.balancoGlobalExato !== 'undefined') {
+            window.balancoGlobalExato = window.balancoGlobalExato - impactoAntigoJerry + impactoNovoJerry;
+          }
+
+          // NOVO: Atualiza também a lista da Pesquisa para a visualização refletir imediatamente
+          if (window.resultadosPesquisa) {
+            const idxPesq = window.resultadosPesquisa.findIndex(it => it.idUnico === id);
+            if (idxPesq !== -1) {
+              window.resultadosPesquisa[idxPesq] = { ...item }; // Clona o item atualizado para a pesquisa
+            }
+          }
+        }
+      });
+
+      // Atualiza status do saldo
+      if (typeof window.balancoGlobalExato !== 'undefined') {
+        atualizarSaldoTopo();
+      }
+
+      // Envia para o backend em segundo plano
+      google.script.run
+        .withSuccessHandler(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Aplicar Alterações';
+        })
+        .withFailureHandler(err => alert("Erro ao sincronizar lote: " + err))
+        .salvarGastosEmLote({ ids: idsArr, categoria: novaCat, divisao: novaDiv });
+
+      cancelarSelecaoLote();
+    }
+
+    function excluirLoteFrontend() {
+      if (selecionadosLote.size === 0) return;
+      if (!confirm(`Tem certeza de que deseja mover os ${selecionadosLote.size} gastos selecionados para a lixeira?`)) return;
+
+      const btn = document.getElementById('btnExcluirLote');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>A mover...';
+
+      const idsArr = Array.from(selecionadosLote);
+
+      idsArr.forEach(id => {
+        const itemParaExcluir = historicoGlobal.find(it => it.idUnico === id);
+        if (itemParaExcluir && typeof window.balancoGlobalExato !== 'undefined') {
+          const impactoAntigoJerry = (itemParaExcluir.pagador === 'Jerry') ? itemParaExcluir.cotaLarissa : -itemParaExcluir.cotaJerry;
+          window.balancoGlobalExato = window.balancoGlobalExato - impactoAntigoJerry;
+        }
+        historicoGlobal = historicoGlobal.filter(it => it.idUnico !== id);
+        
+        // NOVO: Remove também da tela de pesquisa, caso você tenha apagado a partir de lá
+        if (window.resultadosPesquisa) {
+          window.resultadosPesquisa = window.resultadosPesquisa.filter(it => it.idUnico !== id);
+        }
+      });
+      window.historicoGlobal = historicoGlobal;
+
+      if (typeof window.balancoGlobalExato !== 'undefined') {
+        atualizarSaldoTopo();
+      }
+
+      google.script.run
+        .withSuccessHandler(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-trash-fill me-1"></i> Excluir';
+        })
+        .withFailureHandler(err => alert("Erro ao sincronizar exclusão em lote: " + err))
+        .excluirGastosEmLote(idsArr);
+
+      cancelarSelecaoLote();
+    }
+
+
+    // ==========================================
+    // MÓDULO DE RELATÓRIOS E GRÁFICOS (CHART.JS)
+    // ==========================================
+    let chartRelatorioInstance = null;
+
+    function popularCategoriasRelatorio() {
+      const container = document.getElementById('containerCategoriasRelatorio');
+      if (!container || container.innerHTML.trim() !== '') return; 
+      
+      let html = `<input type="checkbox" class="btn-check" id="relCatTodas" value="todas" onchange="alternarTodasCategoriasRelatorio()" checked>
+                  <label class="btn btn-outline-secondary" for="relCatTodas">Todas</label>`;
+      
+      categorias.forEach((cat, index) => {
+        html += `<input type="checkbox" class="btn-check cat-rel-check" id="relCat${index}" value="${cat}" onchange="atualizarSelecaoCategoriasRelatorio()">
+                 <label class="btn btn-outline-secondary" for="relCat${index}">${cat}</label>`;
+      });
+      
+      container.innerHTML = html;
+    }
+
+    function alternarTodasCategoriasRelatorio() {
+      const checkTodas = document.getElementById('relCatTodas');
+      const checks = document.querySelectorAll('.cat-rel-check');
+      if (checkTodas.checked) {
+        checks.forEach(c => c.checked = false);
+      }
+      atualizarRelatorio();
+    }
+
+    function atualizarSelecaoCategoriasRelatorio() {
+      const checkTodas = document.getElementById('relCatTodas');
+      const checks = document.querySelectorAll('.cat-rel-check');
+      const algumaMarcada = Array.from(checks).some(c => c.checked);
+      
+      if (algumaMarcada) {
+        checkTodas.checked = false;
+      } else {
+        checkTodas.checked = true;
+      }
+      atualizarRelatorio();
+    }
+
+    function obterCategoriasRelatorio() {
+      const checkTodas = document.getElementById('relCatTodas');
+      if (checkTodas && checkTodas.checked) return 'todas';
+      
+      const marcadas = Array.from(document.querySelectorAll('.cat-rel-check:checked')).map(c => c.value);
+      return marcadas.join(', ');
+    }
+
+    function limparGraficoECards() {
+      document.getElementById('relTotalGasto').innerText = 'R$ 0,00';
+      
+      let elStatus = document.getElementById('relStatusMeta');
+      let elCard = document.getElementById('cardStatusRel');
+      let elLabel = document.getElementById('relStatusLabel');
+      
+      elStatus.innerText = "Sem período selecionado";
+      elCard.className = "card shadow-sm border-0 rounded-4 bg-secondary-subtle h-100";
+      elStatus.className = "fs-6 fw-bold text-secondary lh-1";
+      elLabel.className = "text-secondary fw-bold d-block lh-1 mb-1";
+      elLabel.innerText = "STATUS DA META";
+      
+      if (chartRelatorioInstance) {
+        chartRelatorioInstance.destroy();
+        chartRelatorioInstance = null;
+      }
+    }
+
+    function limparTelaRelatorioCompleta() {
+      document.getElementById('relDtInicio').value = '';
+      document.getElementById('relDtFim').value = '';
+      
+      const checkTodas = document.getElementById('relCatTodas');
+      if (checkTodas) checkTodas.checked = true;
+      document.querySelectorAll('.cat-rel-check').forEach(c => c.checked = false);
+      
+      document.getElementById('relTarget').value = '';
+      limparGraficoECards();
+    }
+
+    function inicializarRelatorio() {
+      popularCategoriasRelatorio();
+      // O 'true' indica que é a abertura da tela, forçando a lógica de autoseleção ou limpeza
+      carregarPresetsUI(true); 
+    }
+
+    // --- LÓGICA DOS PRE-SETS SALVOS NO SHEETS ---
+    function carregarPresetsUI(isInit = false) {
+      google.script.run
+        .withSuccessHandler(res => {
+          window.presetsGlobais = res;
+          renderizarPresets(isInit);
+        })
+        .getPresetsServidor();
+    }
+
+    function renderizarPresets(isInit = false) {
+      const container = document.getElementById('containerPresetsRelatorio');
+      
+      let usuarioAtivo = filtroUsuarioCategorizar;
+      if (usuarioAtivo !== 'Jerry' && usuarioAtivo !== 'Larissa') {
+        usuarioAtivo = localStorage.getItem('usuarioAppGasto') || 'Jerry'; 
+      }
+      
+      if (!window.presetsGlobais || window.presetsGlobais.length === 0) {
+        container.innerHTML = '<div class="text-muted small fst-italic">Nenhum atalho salvo na planilha.</div>';
+        if (isInit) limparTelaRelatorioCompleta();
+        return;
+      }
+      
+      let html = '';
+      let primeiroIdx = -1; // Usado para guardar a posição do primeiro atalho válido
+      
+      window.presetsGlobais.forEach((p, idx) => {
+        if (p.usuario !== 'todos' && p.usuario !== usuarioAtivo) return;
+        
+        // Salva o ID do primeiro atalho que passar no filtro
+        if (primeiroIdx === -1) primeiroIdx = idx;
+        
+        let iconeUser = '👥';
+        if (p.usuario === 'Jerry') iconeUser = '👦🏻';
+        else if (p.usuario === 'Larissa') iconeUser = '👱🏻‍♀️';
+
+        html += `<button class="btn btn-sm btn-outline-secondary rounded-pill fw-bold shadow-sm" 
+                  onpointerdown="iniciarPressaoPreset(event, ${idx})"
+                  onpointerup="finalizarPressaoPreset(event, ${idx})"
+                  onpointermove="cancelarPressaoPresetSeMovel(event)"
+                  onpointercancel="cancelarPressaoPresetTotal(event)"
+                  oncontextmenu="event.preventDefault()">
+                  ${iconeUser} ${p.nome}
+                </button> `;
+      });
+      
+      if (html === '') {
+        html = '<div class="text-muted small fst-italic">Nenhum atalho salvo para você.</div>';
+        if (isInit) limparTelaRelatorioCompleta(); // Limpa tudo se não achou atalho pra pessoa
+      } else {
+        // Se for o carregamento inicial da tela e achou algum atalho, simula o clique nele
+        if (isInit && primeiroIdx !== -1) {
+          aplicarPresetPorIndex(primeiroIdx);
+        }
+      }
+      container.innerHTML = html;
+    }
+
+    // --- LÓGICA DE EXCLUSÃO DE PRESET (LONG-PRESS) ---
+    let timerLongPressPreset = null;
+    let startXPreset = 0;
+    let startYPreset = 0;
+    let longPressPresetAtivado = false;
+    let foiRolagemPreset = false;
+
+    function iniciarPressaoPreset(e, idx) {
+      if (e.button && e.button !== 0) return; // Ignora clique direito do mouse
+      const coords = obterCoordenadas(e); // Aproveita a função já existente no código
+      startXPreset = coords.x;
+      startYPreset = coords.y;
+      longPressPresetAtivado = false;
+      foiRolagemPreset = false;
+
+      timerLongPressPreset = setTimeout(() => {
+        longPressPresetAtivado = true;
+        if ('vibrate' in navigator) navigator.vibrate(50);
+        confirmarExclusaoPreset(idx);
+        timerLongPressPreset = null;
+      }, 600); // 600ms para acionar a exclusão
+    }
+
+    function cancelarPressaoPresetSeMovel(e) {
+      const coords = obterCoordenadas(e);
+      if (coords.x === undefined) return;
+      if (Math.abs(coords.x - startXPreset) > 10 || Math.abs(coords.y - startYPreset) > 10) {
+        foiRolagemPreset = true;
+        if (timerLongPressPreset) { clearTimeout(timerLongPressPreset); timerLongPressPreset = null; }
+      }
+    }
+
+    function cancelarPressaoPresetTotal(e) {
+      if (timerLongPressPreset) { clearTimeout(timerLongPressPreset); timerLongPressPreset = null; }
+      foiRolagemPreset = false;
+    }
+
+    function finalizarPressaoPreset(e, idx) {
+      if (timerLongPressPreset) { clearTimeout(timerLongPressPreset); timerLongPressPreset = null; }
+      if (longPressPresetAtivado || foiRolagemPreset) return;
+      aplicarPresetPorIndex(idx); // Se foi toque rápido, aplica o filtro
+    }
+
+    function confirmarExclusaoPreset(idx) {
+      const p = window.presetsGlobais[idx];
+      if (confirm(`Deseja excluir o atalho "${p.nome}" permanentemente?`)) {
+        const container = document.getElementById('containerPresetsRelatorio');
+        container.innerHTML = '<div class="text-muted small fst-italic">Excluindo atalho...</div>';
+        google.script.run
+          .withSuccessHandler(() => carregarPresetsUI())
+          .excluirPresetServidor(p.nome, p.usuario);
+      }
+    }
+
+
+    function salvarAtalhoAtual(btn) {
+      const nome = prompt("Digite um nome curto para este atalho (ex: Mercado Mensal):");
+      if (!nome) return;
+      
+      const obj = {
+        usuario: document.getElementById('relUsuario').value,
+        nome: nome,
+        categoria: obterCategoriasRelatorio(),
+        target: document.getElementById('relTarget').value || 0,
+        dtInicio: document.getElementById('relDtInicio').value,
+        dtFim: document.getElementById('relDtFim').value,
+        hrInicio: document.getElementById('relHoraInicio').value,
+        hrFim: document.getElementById('relHoraFim').value
+      };
+      
+      const textoOrig = btn.innerHTML;
+      btn.innerHTML = "Salvando...";
+      btn.disabled = true;
+      
+      google.script.run
+        .withSuccessHandler(() => {
+          btn.innerHTML = textoOrig;
+          btn.disabled = false;
+          carregarPresetsUI(); // Recarrega os chips na tela instantaneamente
+        })
+        .salvarPresetServidor(obj);
+    }
+
+    function aplicarPresetPorIndex(idx) {
+      const p = window.presetsGlobais[idx];
+      
+      // Suporte para múltiplas categorias na interface (Chips)
+      const checks = document.querySelectorAll('.cat-rel-check');
+      const checkTodas = document.getElementById('relCatTodas');
+      
+      if (p.categoria === 'todas' || !p.categoria) {
+        if(checkTodas) checkTodas.checked = true;
+        checks.forEach(c => c.checked = false);
+      } else {
+        if(checkTodas) checkTodas.checked = false;
+        const categoriasSalvas = p.categoria.split(',').map(c => c.trim());
+        checks.forEach(c => {
+          c.checked = categoriasSalvas.includes(c.value);
+        });
+      }
+      
+      document.getElementById('relTarget').value = p.target;
+      
+      if (p.dtInicio) document.getElementById('relDtInicio').value = p.dtInicio; 
+      if (p.dtFim) document.getElementById('relDtFim').value = p.dtFim;
+      if (p.hrInicio) document.getElementById('relHoraInicio').value = p.hrInicio; 
+      if (p.hrFim) document.getElementById('relHoraFim').value = p.hrFim;
+      
+      if (p.usuario === 'Jerry' || p.usuario === 'Larissa') {
+        document.getElementById('relUsuario').value = p.usuario;
+      } else {
+        document.getElementById('relUsuario').value = 'todos';
+      }
+      
+      window.filtroRelatorioAtivo = p.nome; // Guarda o nome do filtro
+      atualizarRelatorio(true);
+    }
+
+
+    // --- LÓGICA DO GRÁFICO (BUSCANDO DADOS REAIS DA PLANILHA) ---
+    function atualizarRelatorio(fromPreset = false) {
+      if (fromPreset !== true) {
+        window.filtroRelatorioAtivo = "filtro não salvo"; // Se mexeu na mão, perde o status de salvo
+      }
+      const tituloFiltro = window.filtroRelatorioAtivo || "filtro não salvo";
+
+      const user = document.getElementById('relUsuario').value;
+      const catFiltro = obterCategoriasRelatorio();
+      const meta = parseFloat(document.getElementById('relTarget').value) || 0;
+
+      let dtIniStr = document.getElementById('relDtInicio').value;
+      let dtFimStr = document.getElementById('relDtFim').value;
+      let horaIniStr = document.getElementById('relHoraInicio').value || '00:01';
+      let horaFimStr = document.getElementById('relHoraFim').value || '23:59';
+      
+      if(!dtIniStr || !dtFimStr) {
+        limparGraficoECards(); 
+        return; 
+      }
+
+      let pIni = dtIniStr.split('-');
+      let pFim = dtFimStr.split('-');
+      let hIni = horaIniStr.split(':');
+      let hFim = horaFimStr.split(':');
+      
+      // tsBusca (00:00 e 23:59) garante que o servidor pegue TODOS os gastos da data, sem cortar nada
+      let tsInicioBusca = new Date(pIni[0], pIni[1]-1, pIni[2], 0, 0, 0).getTime();
+      let tsFimBusca = new Date(pFim[0], pFim[1]-1, pFim[2], 23, 59, 59).getTime();
+
+      // tsExato (com a hora e minuto) vai ser usado só pra calcular a proporção da meta!
+      let tsInicioExato = new Date(pIni[0], pIni[1]-1, pIni[2], hIni[0], hIni[1], 0).getTime();
+      let tsFimExato = new Date(pFim[0], pFim[1]-1, pFim[2], hFim[0], hFim[1], 59).getTime();
+
+      // Feedback visual de carregamento
+      document.getElementById('relTotalGasto').innerHTML = '<span class="spinner-border spinner-border-sm text-primary"></span>';
+      document.getElementById('relStatusMeta').innerHTML = 'Calculando...';
+
+      // Pede os dados completos e precisos para o servidor (usando as datas cheias)
+      google.script.run
+        .withSuccessHandler(dadosServidor => {
+           if (dadosServidor && dadosServidor.erro) {
+             alert("Erro ao buscar dados do relatório: " + dadosServidor.erro);
+             limparGraficoECards();
+             return;
+           }
+           // Passa o tempo exato para a função desenhar a proporção da meta minuto a minuto
+           processarEAtualizarGrafico(dadosServidor, tsInicioExato, tsFimExato, user, catFiltro, meta, tituloFiltro);
+        })
+        .obterDadosRelatorioServidor(tsInicioBusca, tsFimBusca);
+    }
+
+    // Função que desenha o gráfico com os dados que chegaram do servidor
+    function processarEAtualizarGrafico(dadosCompletosPlanilha, tsInicio, tsFim, user, catFiltro, meta, tituloFiltro) {
+      // 1. Filtro Bruto de Categoria
+      const dadosFiltrados = dadosCompletosPlanilha.filter(item => {
+        if (catFiltro === 'todas') return true;
+        
+        // Permite considerar mais de uma categoria separada por vírgula no pre-set
+        const categoriasFiltro = catFiltro.split(',').map(c => c.trim());
+        return categoriasFiltro.includes(item.cat);
+      });
+
+      // 2. Cálculo do Total Gasto (Somando a COTA do usuário e não o pagador)
+      let somaTotal = 0;
+      dadosFiltrados.forEach(item => {
+        let valor = (user === 'Jerry') ? item.cotaJerry : ((user === 'Larissa') ? item.cotaLarissa : item.valor);
+        somaTotal += valor;
+      });
+
+      // 3. Estrutura Matemática do Eixo - Inicia SEMPRE no 0 (Origem)
+      let labels = ['Início'];
+      let dadosMeta = [0];
+      let dadosAcumulados = [0];
+
+      let hojeTs = new Date().getTime();
+      let diasTotais = Math.round((tsFim - tsInicio) / (1000 * 60 * 60 * 24)) || 1;
+      
+      let diasPassados = Math.round((hojeTs - tsInicio) / (1000 * 60 * 60 * 24));
+      if (diasPassados < 0) diasPassados = 0; 
+      if (diasPassados > diasTotais) diasPassados = diasTotais; 
+      
+      let diasParaMedia = diasPassados > 0 ? diasPassados : 1; 
+      let mediaDiaria = somaTotal / diasParaMedia;
+
+      for (let i = 1; i <= diasTotais; i++) {
+         let dAtual = new Date(tsInicio + (i * 24 * 60 * 60 * 1000));
+         labels.push(dAtual.getDate() + "/" + (dAtual.getMonth()+1));
+         
+         dadosMeta.push((meta / diasTotais) * i);
+         
+         if (i <= diasPassados) {
+           dadosAcumulados.push(mediaDiaria * i);
+         } else {
+           dadosAcumulados.push(null); 
+         }
+      }
+
+      // 4. Atualizar Interface dos Cards
+      document.getElementById('relTotalGasto').innerText = BRL.format(somaTotal);
+      
+      let elStatus = document.getElementById('relStatusMeta');
+      let elCard = document.getElementById('cardStatusRel');
+      let elLabel = document.getElementById('relStatusLabel');
+      
+      if (meta > 0) {
+        // CÁLCULO CONTÍNUO DA META ATÉ AGORA (Usando milissegundos exatos)
+        let duracaoTotalMs = tsFim - tsInicio;
+        if (duracaoTotalMs <= 0) duracaoTotalMs = 1;
+        
+        let tempoDecorridoMs = hojeTs - tsInicio;
+        if (tempoDecorridoMs < 0) tempoDecorridoMs = 0;
+        if (tempoDecorridoMs > duracaoTotalMs) tempoDecorridoMs = duracaoTotalMs;
+        
+        let proporcaoAgora = tempoDecorridoMs / duracaoTotalMs;
+        let metaProporcional = meta * proporcaoAgora;
+        let diferenca = metaProporcional - somaTotal;
+        
+        if (diferenca >= 0) {
+          elStatus.innerText = `Margem: +${BRL.format(diferenca)}`;
+          elCard.className = "card shadow-sm border-0 rounded-4 bg-success-subtle h-100";
+          elStatus.className = "fs-6 fw-bold text-success lh-1";
+          elLabel.className = "text-success fw-bold d-block lh-1 mb-1";
+          elLabel.innerText = `META ATÉ AGORA (${BRL.format(metaProporcional)})`;
+        } else {
+          elStatus.innerText = `Estourou: -${BRL.format(Math.abs(diferenca))}`;
+          elCard.className = "card shadow-sm border-0 rounded-4 bg-danger-subtle h-100";
+          elStatus.className = "fs-6 fw-bold text-danger lh-1";
+          elLabel.className = "text-danger fw-bold d-block lh-1 mb-1";
+          elLabel.innerText = `META ATÉ AGORA (${BRL.format(metaProporcional)})`;
+        }
+      } else {
+        elStatus.innerText = "Sem meta";
+        elCard.className = "card shadow-sm border-0 rounded-4 bg-secondary-subtle h-100";
+        elStatus.className = "fs-6 fw-bold text-secondary lh-1";
+        elLabel.className = "text-secondary fw-bold d-block lh-1 mb-1";
+        elLabel.innerText = "STATUS DA META";
+      }
+
+      // 5. Desenho do Gráfico Visual
+      const ctx = document.getElementById('graficoRelatorio').getContext('2d');
+      if (chartRelatorioInstance) chartRelatorioInstance.destroy();
+
+      let colecoes = [{
+        label: 'Gasto Médio Projetado',
+        data: dadosAcumulados,
+        borderColor: 'rgba(13, 110, 253, 1)',
+        backgroundColor: 'rgba(13, 110, 253, 0.15)',
+        fill: true,
+        tension: 0, 
+        pointRadius: 0, 
+        pointHitRadius: 15
+      }];
+
+      if (meta > 0) {
+        colecoes.push({
+          label: 'Meta Planejada (Target)',
+          data: dadosMeta,
+          borderColor: 'rgba(220, 53, 69, 1)',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0,
+          borderWidth: 2
+        });
+      }
+
+      chartRelatorioInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: colecoes },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          events: [], // Remove eventos de toque/hover, deixando o gráfico estático
+          plugins: {
+            title: {
+              display: true,
+              text: tituloFiltro.toUpperCase(),
+              color: '#6c757d',
+              font: { size: 14, weight: 'bold' }
+            },
+            legend: { 
+              display: false // Remove completamente a legenda do topo
+            },
+            tooltip: {
+              enabled: false // Desativa a exibição de texto ao clicar/tocar no gráfico
+            }
+          },
+          scales: {
+            y: { 
+              ticks: { 
+                maxTicksLimit: 6, // Reduz a frequência de valores no eixo vertical
+                callback: function(val) { return 'R$ ' + val; } 
+              }, 
+              beginAtZero: true 
+            },
+            x: { 
+              grid: { display: false }, 
+              ticks: { maxTicksLimit: 5 } // Reduz a frequência de datas no eixo horizontal
+            } 
+          }
+        }
+   
+    });
+    }
+
+  </script>
+
+  <div class="modal fade" id="modalDesmembrar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
+      <div class="modal-content">
+        <div class="modal-header bg-warning-subtle">
+          <h5 class="modal-title fw-bold text-dark"><i class="bi bi-layout-split me-2 text-warning"></i>Desmembrar Gasto</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body bg-body-tertiary">
+          
+          <div class="alert alert-secondary py-2 mb-3 shadow-sm border-0 d-flex flex-column" style="font-size: 0.85rem;">
+            <div class="fw-bold mb-1 text-dark"><i class="bi bi-lock-fill"></i> Fixos do Gasto Original:</div>
+            <div id="desmFixosTexto" class="text-muted"></div>
+          </div>
+          
+          <div class="fw-bold text-primary mb-3 text-center fs-5 border rounded-4 py-2 bg-body shadow-sm">
+            Total Original: <span id="desmValorTotalOriginal"></span>
+          </div>
+
+          <div class="card shadow-sm border-0 rounded-4 mb-3">
+            <div class="card-header bg-primary text-white py-2 fw-bold small rounded-top-4" style="letter-spacing: 0.5px;">NOVO CARD 1</div>
+            <div class="card-body p-3">
+              <label class="small text-muted fw-bold">Descrição</label>
+              <input type="text" class="form-control fw-bold mb-2 border-primary" id="desmDesc1">
+              
+              <label class="small text-muted fw-bold">Categoria</label>
+              <select class="form-select fw-bold mb-3" id="desmCat1"></select>
+              
+              <div class="row g-2 mb-2">
+                <div class="col-12"><label class="small text-muted fw-bold">Valor (R$)</label><input type="text" inputmode="decimal" class="form-control text-primary fw-bold" id="desmValor1" autocomplete="new-password" oninput="calcularDesmembramento(1)"></div>
+                <div class="col-6"><label class="small text-muted fw-bold">Jerry (R$)</label><input type="text" inputmode="decimal" class="form-control fw-bold" id="desmJerry1" autocomplete="new-password" oninput="autoCalcularCotaDesmembramento(1, 'jerry')"></div>
+                <div class="col-6"><label class="small text-muted fw-bold">Larissa (R$)</label><input type="text" inputmode="decimal" class="form-control fw-bold text-pink border-danger-subtle" id="desmLari1" autocomplete="new-password" oninput="autoCalcularCotaDesmembramento(1, 'lari')"></div>
+              </div>
+              <div class="d-flex gap-1 mt-2">
+                 <button class="btn btn-sm btn-outline-primary flex-fill fw-bold shadow-sm" onclick="dividirDesmembramento100(1, 'jerry')">100% 👦🏻</button>
+                 <button class="btn btn-sm btn-outline-secondary flex-fill fw-bold shadow-sm" onclick="dividirDesmembramentoMeioAMeio(1)">50/50</button>
+                 <button class="btn btn-sm btn-outline-danger flex-fill fw-bold shadow-sm" onclick="dividirDesmembramento100(1, 'lari')">100% 👱🏻‍♀️</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm border-0 rounded-4 mb-2">
+            <div class="card-header bg-success text-white py-2 fw-bold small rounded-top-4" style="letter-spacing: 0.5px;">NOVO CARD 2</div>
+            <div class="card-body p-3">
+              <label class="small text-muted fw-bold">Descrição</label>
+              <input type="text" class="form-control fw-bold mb-2 border-success" id="desmDesc2">
+              
+              <label class="small text-muted fw-bold">Categoria</label>
+              <select class="form-select fw-bold mb-3" id="desmCat2"></select>
+              
+              <div class="row g-2 mb-2">
+                <div class="col-12"><label class="small text-muted fw-bold">Valor (R$)</label><input type="text" inputmode="decimal" class="form-control text-success fw-bold" id="desmValor2" autocomplete="new-password" oninput="calcularDesmembramento(2)"></div>
+                <div class="col-6"><label class="small text-muted fw-bold">Jerry (R$)</label><input type="text" inputmode="decimal" class="form-control fw-bold" id="desmJerry2" autocomplete="new-password" oninput="autoCalcularCotaDesmembramento(2, 'jerry')"></div>
+                <div class="col-6"><label class="small text-muted fw-bold">Larissa (R$)</label><input type="text" inputmode="decimal" class="form-control fw-bold text-pink border-danger-subtle" id="desmLari2" autocomplete="new-password" oninput="autoCalcularCotaDesmembramento(2, 'lari')"></div>
+              </div>
+              <div class="d-flex gap-1 mt-2">
+                 <button class="btn btn-sm btn-outline-primary flex-fill fw-bold shadow-sm" onclick="dividirDesmembramento100(2, 'jerry')">100% 👦🏻</button>
+                 <button class="btn btn-sm btn-outline-secondary flex-fill fw-bold shadow-sm" onclick="dividirDesmembramentoMeioAMeio(2)">50/50</button>
+                 <button class="btn btn-sm btn-outline-danger flex-fill fw-bold shadow-sm" onclick="dividirDesmembramento100(2, 'lari')">100% 👱🏻‍♀️</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer d-flex p-2 bg-body">
+          <button type="button" class="btn btn-secondary rounded-pill fw-bold px-4" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-warning text-dark rounded-pill fw-bold flex-fill shadow-lg" id="btnConfirmarDesm" onclick="executarDesmembramento()">
+            <i class="bi bi-check2-circle"></i> Confirmar Divisão
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let modalDesmInstance = null;
+    let desmItemOriginal = null;
+
+    function lerNumGenerico(id) {
+      let el = document.getElementById(id);
+      if (!el) return 0;
+      let val = el.value;
+      if (!val) return 0;
+      if (val.includes(',')) val = val.replace(/\./g, '').replace(',', '.');
+      return parseFloat(val) || 0;
+    }
+
+    function abrirModalDesmembrar() {
+      if (!idUnicoEdicao) return;
+      desmItemOriginal = historicoGlobal.find(it => it.idUnico === idUnicoEdicao);
+      if (!desmItemOriginal) return;
+
+      let catOptions = '<option value="">-- Selecione --</option>';
+      categorias.forEach(cat => catOptions += `<option value="${cat}">${cat}</option>`);
+      document.getElementById('desmCat1').innerHTML = catOptions;
+      document.getElementById('desmCat2').innerHTML = catOptions;
+
+      document.getElementById('desmFixosTexto').innerHTML = 
+        `Data: <b>${desmItemOriginal.data} ${desmItemOriginal.horario ? desmItemOriginal.horario.substring(0,5) : ''}</b><br>
+         Pagador: <b>${desmItemOriginal.pagador}</b> | Forma: <b>${desmItemOriginal.forma}</b>`;
+      
+      document.getElementById('desmValorTotalOriginal').innerText = BRL.format(desmItemOriginal.valor);
+
+      document.getElementById('desmDesc1').value = desmItemOriginal.desc;
+      document.getElementById('desmDesc2').value = desmItemOriginal.desc;
+      document.getElementById('desmCat1').value = desmItemOriginal.cat;
+      document.getElementById('desmCat2').value = desmItemOriginal.cat;
+      
+      document.getElementById('desmValor1').value = '';
+      document.getElementById('desmJerry1').value = '';
+      document.getElementById('desmLari1').value = '';
+      document.getElementById('desmValor2').value = '';
+      document.getElementById('desmJerry2').value = '';
+      document.getElementById('desmLari2').value = '';
+
+      if (!modalDesmInstance) modalDesmInstance = new bootstrap.Modal(document.getElementById('modalDesmembrar'));
+      modalDesmInstance.show();
+    }
+
+    function autoCalcularCotaDesmembramento(card, alterado) {
+      let total = lerNumGenerico(`desmValor${card}`);
+      let valAlterado = lerNumGenerico(`desm${alterado === 'jerry' ? 'Jerry' : 'Lari'}${card}`);
+      let valComplemento = total - valAlterado;
+      
+      if (alterado === 'jerry') {
+        document.getElementById(`desmLari${card}`).value = valComplemento.toFixed(3).replace('.', ',');
+      } else {
+        document.getElementById(`desmJerry${card}`).value = valComplemento.toFixed(3).replace('.', ',');
+      }
+    }
+
+    function calcularDesmembramento(origem) {
+      let val1 = lerNumGenerico('desmValor1');
+      let val2 = lerNumGenerico('desmValor2');
+      let valTotal = desmItemOriginal ? desmItemOriginal.valor : 0;
+
+      if (origem === 1 && document.getElementById('desmValor1').value !== '') {
+         let diff = valTotal - val1;
+         if (diff >= 0) document.getElementById('desmValor2').value = diff.toFixed(2).replace('.', ',');
+      } else if (origem === 2 && document.getElementById('desmValor2').value !== '') {
+         let diff = valTotal - val2;
+         if (diff >= 0) document.getElementById('desmValor1').value = diff.toFixed(2).replace('.', ',');
+      }
+      
+      dividirDesmembramentoMeioAMeio(1, true);
+      dividirDesmembramentoMeioAMeio(2, true);
+    }
+
+    function dividirDesmembramentoMeioAMeio(card, silencioso = false) {
+      let v = lerNumGenerico(`desmValor${card}`);
+      if (v <= 0 && !silencioso) return;
+      let metade = (v / 2).toFixed(3).replace('.', ',');
+      document.getElementById(`desmJerry${card}`).value = metade;
+      document.getElementById(`desmLari${card}`).value = metade;
+    }
+
+    function dividirDesmembramento100(card, user) {
+      let v = lerNumGenerico(`desmValor${card}`);
+      let totalStr = v.toFixed(3).replace('.', ',');
+      if (user === 'jerry') {
+         document.getElementById(`desmJerry${card}`).value = totalStr;
+         document.getElementById(`desmLari${card}`).value = '0,000';
+      } else {
+         document.getElementById(`desmLari${card}`).value = totalStr;
+         document.getElementById(`desmJerry${card}`).value = '0,000';
+      }
+    }
+
+    function executarDesmembramento() {
+       let val1 = lerNumGenerico('desmValor1');
+       let j1 = lerNumGenerico('desmJerry1');
+       let l1 = lerNumGenerico('desmLari1');
+       let desc1 = document.getElementById('desmDesc1').value;
+       let cat1 = document.getElementById('desmCat1').value;
+
+       let val2 = lerNumGenerico('desmValor2');
+       let j2 = lerNumGenerico('desmJerry2');
+       let l2 = lerNumGenerico('desmLari2');
+       let desc2 = document.getElementById('desmDesc2').value;
+       let cat2 = document.getElementById('desmCat2').value;
+
+       if (Math.abs(val1 + val2 - desmItemOriginal.valor) > 0.05) {
+          alert("Erro: A soma dos valores dos dois cards novos não bate com o valor da nota original!");
+          return;
+       }
+       if (Math.abs(j1 + l1 - val1) > 0.05) { alert("A soma das cotas do Novo Card 1 não bate com seu valor."); return; }
+       if (Math.abs(j2 + l2 - val2) > 0.05) { alert("A soma das cotas do Novo Card 2 não bate com seu valor."); return; }
+       if (!desc1 || !desc2 || !cat1 || !cat2) { alert("Preencha descrições e categorias para os dois cards!"); return; }
+
+       const btn = document.getElementById('btnConfirmarDesm');
+       btn.disabled = true;
+       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processando Divisão...';
+
+       const dados1 = {
+          idNovo: desmItemOriginal.idUnico + "-DESMEMBRADO-01",
+          descricao: desc1, categoria: cat1, valor: val1, jerry: j1, larissa: l1,
+          pagador: desmItemOriginal.pagador, forma: desmItemOriginal.forma,
+          dataGasto: desmItemOriginal.dataRaw, horario: desmItemOriginal.horario
+       };
+
+       const dados2 = {
+          idNovo: desmItemOriginal.idUnico + "-DESMEMBRADO-02",
+          descricao: desc2, categoria: cat2, valor: val2, jerry: j2, larissa: l2,
+          pagador: desmItemOriginal.pagador, forma: desmItemOriginal.forma,
+          dataGasto: desmItemOriginal.dataRaw, horario: desmItemOriginal.horario
+       };
+
+       google.script.run
+         .withSuccessHandler(res => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2-circle"></i> Confirmar Divisão';
+            
+            if (res.success) {
+               modalDesmInstance.hide();
+               alert("Desmembramento realizado com sucesso!\nO card original foi para a lixeira.");
+               cancelarEdicao();
+               carregarDashboard();
+            } else {
+               alert("Erro no servidor: " + res.message);
+            }
+         })
+         .withFailureHandler(err => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2-circle"></i> Confirmar Divisão';
+            alert("Erro de conexão: " + err);
+         })
+         .desmembrarGasto(desmItemOriginal.idUnico, dados1, dados2);
+    }
+  </script>
+</body>
+</html>
