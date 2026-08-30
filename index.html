@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 
+  
+
   <!-- Conecta o Manifest para o Chrome e tela cheia -->
   <link rel="manifest" href="manifest.json">
   <!-- Ícone para a aba do navegador (Favicon) -->
@@ -13,9 +15,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#f8f9fa">
+  <meta charset="UTF-8">
+
+
+  <!-- Força o navegador a validar mudanças no código HTML -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 
   
-  <meta charset="UTF-8">
   <title>Controle de Gastos</title>
   
   
@@ -38,9 +46,13 @@
               return function(...args) {
                 fetch(API_URL, {
                   method: 'POST',
-                  // text/plain burla as restrições de CORS do Apps Script
                   headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify({ action: prop, args: args, pin: localStorage.getItem('meuPinSecreto') })
+                  body: JSON.stringify({ 
+                    action: prop, 
+                    args: args,
+                    // Envia silenciosamente o PIN salvo no aparelho
+                    pin: localStorage.getItem('meuPinSecreto') 
+                  })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -3783,6 +3795,87 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       }
     }
   });
+</script>
+
+
+
+
+<script>
+  // 1. TELA DE BLOQUEIO E IDENTIFICAÇÃO DEFINITIVA DO DONO
+  document.addEventListener("DOMContentLoaded", function() {
+    const pinSalvo = localStorage.getItem('meuPinSecreto');
+    const donoSalvo = localStorage.getItem('donoDoAparelho');
+
+    if (!pinSalvo || !donoSalvo) {
+      const senhaDigitada = prompt("Aplicativo bloqueado. Digite sua senha de acesso:");
+      if (senhaDigitada) {
+        
+        // Mude as senhas abaixo para combinar com o Backend
+        const PIN_JERRY = "2026";
+        const PIN_LARISSA = "2027";
+        
+        let donoReal = "";
+        if (senhaDigitada === PIN_JERRY) donoReal = "Jerry";
+        else if (senhaDigitada === PIN_LARISSA) donoReal = "Larissa";
+        
+        if (donoReal) {
+          localStorage.setItem('meuPinSecreto', senhaDigitada);
+          localStorage.setItem('donoDoAparelho', donoReal); // Crava o dono real do celular
+          alert(`Bem-vindo(a) ao seu aplicativo, ${donoReal}!`);
+          location.reload(); 
+        } else {
+          alert("Senha incorreta!");
+          document.body.style.display = 'none';
+        }
+      } else {
+        document.body.style.display = 'none';
+      }
+    } else {
+      // Se a senha já está salva, inicia o radar
+      iniciarMonitoramento();
+    }
+  });
+
+  // 2. SISTEMA DE ATUALIZAÇÃO EM TEMPO REAL (POLLING)
+  let localLastUpdate = 0;
+  
+  function iniciarMonitoramento() {
+    setInterval(async () => {
+      try {
+        const res = await fetch(API_URL + "?t=" + new Date().getTime());
+        const data = await res.json();
+        
+        if (localLastUpdate === 0) {
+          localLastUpdate = data.lastUpdate; 
+          return;
+        }
+        
+        if (data.lastUpdate > localLastUpdate) {
+          // Puxa o verdadeiro dono do celular validado pela senha
+          const donoReal = localStorage.getItem('donoDoAparelho') || 'Desconhecido';
+          
+          // Só recarrega a tela se a edição no servidor foi feita pela OUTRA pessoa
+          if (data.lastUser !== donoReal && data.lastUser !== "Nenhum") {
+            
+            const navTitulo = document.getElementById('tituloAbaAtual');
+            if (navTitulo) {
+              const tituloOriginal = navTitulo.innerHTML;
+              navTitulo.innerHTML = '<i class="bi bi-cloud-arrow-down-fill text-success me-2"></i>Atualizando...';
+              setTimeout(() => { navTitulo.innerHTML = tituloOriginal; }, 3000);
+            }
+            
+            if (typeof carregarDashboard === 'function') {
+              carregarDashboard();
+            }
+          }
+          
+          localLastUpdate = data.lastUpdate;
+        }
+      } catch (err) {
+        console.log("Erro no monitoramento: ", err);
+      }
+    }, 15000); // 15000 = 15 segundos
+  }
 </script>
   
 </body>
