@@ -6,7 +6,7 @@
   <script>
     // === CONTROLE DE VERSÃO E CACHE DO PWA ===
     // Mude este número SEMPRE que fizer uma atualização no código no GitHub!
-    const VERSAO_APP = "1.58.11"; 
+    const VERSAO_APP = "1.58.10"; 
     
     const versaoCache = localStorage.getItem('versaoAppOtimizado');
     if (versaoCache !== VERSAO_APP) {
@@ -746,8 +746,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     
     <!-- Gráfico no Topo -->
     <div class="card shadow-sm border-0 rounded-4 mb-3 mt-2 bg-body">
-      <div class="card-body p-2" style="position: relative; height: 370px; width: 100%;">
-        <canvas id="graficoRelatorio"></canvas>
+      <div class="card-body p-2">
+        <canvas id="graficoRelatorio" style="height: 370px; width: 100%;"></canvas>
       </div>
     </div>
 
@@ -1346,8 +1346,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
                   <span class="badge bg-primary rounded-pill shadow-sm fs-6" id="badgeTotalCategorizar">R$ 0,00</span>
                 </div>
                 <div class="card shadow-sm border-0 rounded-4 bg-body mb-3">
-                  <div class="card-body p-2" style="position: relative; height: 250px; width: 100%;">
-                    <canvas id="graficoCategorizar"></canvas>
+                  <div class="card-body p-2">
+                    <canvas id="graficoCategorizar" style="height: 250px; width: 100%;"></canvas>
                   </div>
                 </div>
                 <div id="statusMetaCategorizar" class="text-center small fw-bold mt-2 mb-4"></div>
@@ -2546,7 +2546,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
                   <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
                 </div>
               </div>
-              <div class="text-end flex-shrink-0 ms-auto" style="font-size: 0.85rem; line-height: 1.1;">
+              <div class="text-end flex-shrink-0 ms-auto" style="font-size: 0.95rem; line-height: 1.1;">
                 <div class="text-body"><i class="bi bi-calendar-event"></i> ${item.data}</div>
                 ${horarioDisplay}
               </div>
@@ -2800,7 +2800,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
                   <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
                 </div>
               </div>
-              <div class="text-end flex-shrink-0 ms-auto" style="font-size: 0.85rem; line-height: 1.1;">
+              <div class="text-end flex-shrink-0 ms-auto" style="font-size: 0.95rem; line-height: 1.1;">
                 <div class="text-body"><i class="bi bi-calendar-event"></i> ${item.data}</div>
                 ${horarioDisplay}
               </div>
@@ -3606,14 +3606,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       }
 
       // 5. Desenho do Gráfico Visual
-      const canvasEl = document.getElementById('graficoRelatorio');
-      if (!canvasEl) return;
-      const ctx = canvasEl.getContext('2d');
-      
-      if (chartRelatorioInstance) {
-        chartRelatorioInstance.destroy();
-        chartRelatorioInstance = null;
-      }
+      const ctx = document.getElementById('graficoRelatorio').getContext('2d');
+      if (chartRelatorioInstance) chartRelatorioInstance.destroy();
 
       let colecoes = [{
         label: 'Gasto Médio Projetado',
@@ -3781,14 +3775,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
          elStatus.innerText = "";
       }
 
-      const canvasEl = document.getElementById('graficoCategorizar');
-      if (!canvasEl) return;
-      const ctx = canvasEl.getContext('2d');
-      
-      if (chartMiniInstance) {
-        chartMiniInstance.destroy();
-        chartMiniInstance = null;
-      }
+      const ctx = document.getElementById('graficoCategorizar').getContext('2d');
+      if (chartMiniInstance) chartMiniInstance.destroy();
 
       let colecoes = [{
         label: 'Gasto',
