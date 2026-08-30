@@ -6,7 +6,7 @@
   <script>
     // === CONTROLE DE VERSÃO E CACHE DO PWA ===
     // Mude este número SEMPRE que fizer uma atualização no código no GitHub!
-    const VERSAO_APP = "1.0.8a"; 
+    const VERSAO_APP = "1.0.9"; 
     
     const versaoCache = localStorage.getItem('versaoAppOtimizado');
     if (versaoCache !== VERSAO_APP) {
@@ -2541,7 +2541,6 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
           
             <div class="d-flex justify-content-between align-items-start mb-2 pt-1">
               <div class="d-flex flex-column gap-1 overflow-hidden me-2" style="min-width: 0;">
-                <div class="small fw-semibold text-truncate" style="line-height: 1;">${textoCategoria}</div>
                 <div class="d-flex flex-wrap gap-1">
                   <span class="badge ${corPagador} shadow-sm px-2 py-1 text-truncate" style="max-width: 100%;"><i class="bi bi-person-fill"></i> ${item.pagador}</span>
                   <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
@@ -2553,13 +2552,18 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
               </div>
             </div>
             
-            <div class="d-flex justify-content-between align-items-center">
-              <div class="text-muted fw-bold" style="font-size: 0.8rem; line-height: 1.1;">
-                ${htmlJerry}
-                ${htmlLarissa}
+            <div class="d-flex justify-content-between align-items-center w-100 mt-1">
+              <div class="d-flex align-items-center gap-3 overflow-hidden" style="min-width: 0; flex: 1;">
+                <div class="text-muted fw-bold flex-shrink-0" style="font-size: 0.8rem; line-height: 1.1;">
+                  ${htmlJerry}
+                  ${htmlLarissa}
+                </div>
+                <div class="small fw-semibold text-truncate" style="line-height: 1.1; min-width: 0;">
+                  ${textoCategoria}
+                </div>
               </div>
         
-              <div class="text-end text-primary" style="font-size: 1.05rem;">
+              <div class="text-end text-primary flex-shrink-0 ms-2" style="font-size: 1.05rem;">
                 <div class="fw-bold lh-1">${BRL.format(item.valor)}</div>
               </div>
             </div>
@@ -2791,7 +2795,6 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
             
             <div class="d-flex justify-content-between align-items-start mb-2">
               <div class="d-flex flex-column gap-1 overflow-hidden me-2" style="min-width: 0;">
-                <div class="small fw-semibold text-truncate" style="line-height: 1;">${textoCategoria}</div>
                 <div class="d-flex flex-wrap gap-1">
                   <span class="badge ${corPagador} shadow-sm px-2 py-1 text-truncate" style="max-width: 100%;"><i class="bi bi-person-fill"></i> ${item.pagador}</span>
                   <span class="badge shadow-sm px-2 py-1 text-truncate" style="${estiloForma}; max-width: 100%;"><i class="bi bi-credit-card"></i> ${item.forma}</span>
@@ -2803,13 +2806,18 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
               </div>
             </div>
             
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="text-muted fw-bold" style="font-size: 0.8rem; line-height: 1.1;">
-                ${htmlJerry}
-                ${htmlLarissa}
+            <div class="d-flex justify-content-between align-items-center w-100 mt-1 mb-2">
+              <div class="d-flex align-items-center gap-3 overflow-hidden" style="min-width: 0; flex: 1;">
+                <div class="text-muted fw-bold flex-shrink-0" style="font-size: 0.8rem; line-height: 1.1;">
+                  ${htmlJerry}
+                  ${htmlLarissa}
+                </div>
+                <div class="small fw-semibold text-truncate" style="line-height: 1.1; min-width: 0;">
+                  ${textoCategoria}
+                </div>
               </div>
-              <div class="text-end text-primary">
-                <div class="fw-bold fs-4 lh-1">${BRL.format(item.valor)}</div>
+              <div class="text-end text-primary flex-shrink-0 ms-2" style="font-size: 1.05rem;">
+                <div class="fw-bold lh-1">${BRL.format(item.valor)}</div>
               </div>
             </div>
 
