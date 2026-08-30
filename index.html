@@ -40,7 +40,7 @@
                   method: 'POST',
                   // text/plain burla as restrições de CORS do Apps Script
                   headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify({ action: prop, args: args })
+                  body: JSON.stringify({ action: prop, args: args, pin: localStorage.getItem('meuPinSecreto') })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -3766,5 +3766,24 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
          .desmembrarGasto(desmItemOriginal.idUnico, dados1, dados2);
     }
   </script>
+
+
+  <script>
+  // Ao carregar a página, checa se o PIN já está salvo
+  document.addEventListener("DOMContentLoaded", function() {
+    if (!localStorage.getItem('meuPinSecreto')) {
+      const senhaDigitada = prompt("Aplicativo bloqueado. Digite a senha de acesso:");
+      if (senhaDigitada) {
+        localStorage.setItem('meuPinSecreto', senhaDigitada);
+        // Opcional: recarrega a página após salvar
+        location.reload(); 
+      } else {
+        // Se cancelar, esconde o corpo do app
+        document.body.style.display = 'none';
+      }
+    }
+  });
+</script>
+  
 </body>
 </html>
