@@ -885,7 +885,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     // Função inteligente ao selecionar categoria
     function aoMudarCategoria(nomeCategoria, pularScroll = false) {
       const boxCustom = document.getElementById('boxCustom');
-      if (nomeCategoria === '⛽️ posto de combustivel') {
+      if (nomeCategoria === '⛽️ posto (abastecimento)') {
          boxCustom.style.opacity = '0.4';
          boxCustom.style.pointerEvents = 'none';
          if(!document.getElementById('alertaPosto100')) {
@@ -936,8 +936,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
 
         if (g.dataRaw >= '2026-08-27') {
           
-          // 2. ACRÉSCIMO: Sempre que a categoria for posto de combustível
-          if (g.cat === '⛽️ posto de combustivel') {
+          // 2. ACRÉSCIMO: Sempre que a categoria for ⛽️ posto (abastecimento)
+          if (g.cat === '⛽️ posto (abastecimento)') {
             if (g.pagador === 'Jerry') credJerry += g.valor;
             if (g.pagador === 'Larissa') credLarissa += g.valor;
           } 
@@ -968,9 +968,9 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     });
     document.getElementById('containerCategorias').innerHTML = htmlCats;
     
-    // Preenche categorias do menu Uso do Carro (sem Posto de Combustível)
+    // Preenche categorias do menu Uso do Carro (sem ⛽️ posto (abastecimento))
     let htmlCatsUso = "";
-    categorias.filter(c => c !== '⛽️ posto de combustivel').forEach((cat, index) => {
+    categorias.filter(c => c !== '⛽️ posto (abastecimento)').forEach((cat, index) => {
       htmlCatsUso += `<input type="radio" class="btn-check" name="usoCategoria" id="usoCat${index}" value="${cat}" required>`;
       htmlCatsUso += `<label class="btn btn-outline-secondary" for="usoCat${index}">${cat}</label>`;
     });
@@ -1633,7 +1633,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       const pagador = radioPagador ? radioPagador.value : '';
 
       const radioCatAtivo = document.querySelector('input[name="categoria"]:checked');
-      if (radioCatAtivo && radioCatAtivo.value === '⛽️ posto de combustivel' && pagador) {
+      if (radioCatAtivo && radioCatAtivo.value === '⛽️ posto (abastecimento)' && pagador) {
           if (pagador === 'Jerry') {
               document.getElementById('cotaJerry').value = valor.toFixed(3).replace('.', ',');
               document.getElementById('cotaLarissa').value = '0,000';
