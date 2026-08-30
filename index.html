@@ -46,7 +46,7 @@
               return function(...args) {
                 fetch(API_URL, {
                   method: 'POST',
-                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  headers: { 'Content-Type': 'text/plain' },
                   body: JSON.stringify({ 
                     action: prop, 
                     args: args,
@@ -2614,7 +2614,14 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
           // Renderiza a lista de categorizar respeitando o filtro ativo (Todos, Jerry ou Larissa)
           renderizarListaCategorizar();
           if(typeof calcularCreditosCombustivel === 'function') calcularCreditosCombustivel();
-        }).getDashboardData();
+        })
+
+        .withFailureHandler(function(err) {
+           // NOVO: Exibe o erro real na tela em vez de ficar carregando para sempre
+           listaHistorico.innerHTML = `<div class='alert alert-danger mt-3'>Erro ao conectar: ${err}</div>`;
+        })
+        .getDashboardData();
+      
     }
 
     // LIXEIRA
