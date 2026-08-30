@@ -6,7 +6,7 @@
   <script>
     // === CONTROLE DE VERSÃO E CACHE DO PWA ===
     // Mude este número SEMPRE que fizer uma atualização no código no GitHub!
-    const VERSAO_APP = "1.0.3"; 
+    const VERSAO_APP = "1.0.4"; 
     
     const versaoCache = localStorage.getItem('versaoAppOtimizado');
     if (versaoCache !== VERSAO_APP) {
@@ -1313,11 +1313,27 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
 
           if (countTotal === 0) {
             listaCategorizar.innerHTML = `
-              <div class="alert alert-success text-center border-0 rounded-4 shadow-sm p-4 mt-2">
-                <i class="bi bi-check-circle-fill fs-2 text-success d-block mb-2"></i>
-                <span class="fw-bold">Tudo em ordem!</span><br>
-                <small class="text-muted">Nenhum gasto pendente de categoria ou divisão encontrado para esta seleção.</small>
+              <div class="alert alert-success d-flex align-items-center border-0 rounded-4 shadow-sm p-3 mt-2 mb-4">
+                <i class="bi bi-check-circle-fill fs-3 text-success me-3"></i>
+                <div>
+                  <span class="fw-bold d-block lh-1 mb-1">Tudo em ordem!</span>
+                  <small class="text-muted lh-1" style="font-size: 0.75rem;">Nenhuma pendência encontrada para esta seleção.</small>
+                </div>
+              </div>
+              <div id="containerGraficoCategorizar" class="d-none">
+                <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                  <span class="text-muted fw-bold small" style="font-size: 0.7rem;"><i class="bi bi-star-fill text-warning me-1"></i> SEU FILTRO PADRÃO</span>
+                  <span class="badge bg-primary rounded-pill shadow-sm fs-6" id="badgeTotalCategorizar">R$ 0,00</span>
+                </div>
+                <div class="card shadow-sm border-0 rounded-4 bg-body mb-3">
+                  <div class="card-body p-2">
+                    <canvas id="graficoCategorizar" style="height: 250px; width: 100%;"></canvas>
+                  </div>
+                </div>
+                <div id="statusMetaCategorizar" class="text-center small fw-bold mt-2 mb-4"></div>
               </div>`;
+            
+            setTimeout(() => { if (typeof desenharGraficoPadraoNaCategorizacao === 'function') desenharGraficoPadraoNaCategorizacao(); }, 50);
           } else {
         // Se houver mais itens na memória do que o limite atual, desenha o botão
         if (countTotal > countExibidos) {
@@ -3244,13 +3260,18 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
         if (p.usuario === 'Jerry') iconeUser = '👦🏻';
         else if (p.usuario === 'Larissa') iconeUser = '👱🏻‍♀️';
 
-        html += `<button class="btn btn-sm btn-outline-secondary rounded-pill fw-bold shadow-sm" 
+        const padrao = localStorage.getItem('filtroPadraoRelatorio');
+        const isPadrao = (padrao === p.nome);
+        const btnClass = isPadrao ? "btn btn-sm btn-outline-primary border-2 rounded-pill fw-bold shadow" : "btn btn-sm btn-outline-secondary rounded-pill fw-bold shadow-sm";
+        const iconePadrao = isPadrao ? '<i class="bi bi-star-fill text-warning me-1"></i>' : '';
+
+        html += `<button class="${btnClass}" 
                   onpointerdown="iniciarPressaoPreset(event, ${idx})"
                   onpointerup="finalizarPressaoPreset(event, ${idx})"
                   onpointermove="cancelarPressaoPresetSeMovel(event)"
                   onpointercancel="cancelarPressaoPresetTotal(event)"
                   oncontextmenu="event.preventDefault()">
-                  ${iconeUser} ${p.nome}
+                  ${iconePadrao}${iconeUser} ${p.nome}
                 </button> `;
       });
       
@@ -3309,9 +3330,40 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       aplicarPresetPorIndex(idx); // Se foi toque rápido, aplica o filtro
     }
 
+    let modalOpcoesPresetInstancia = null;
+    let idxPresetSelecionado = -1;
+
     function confirmarExclusaoPreset(idx) {
       const p = window.presetsGlobais[idx];
-      if (confirm(`Deseja excluir o atalho "${p.nome}" permanentemente?`)) {
+      idxPresetSelecionado = idx;
+      document.getElementById('tituloOpcoesPreset').innerText = p.nome;
+      
+      if (!modalOpcoesPresetInstancia) {
+        modalOpcoesPresetInstancia = new bootstrap.Modal(document.getElementById('modalOpcoesPreset'));
+      }
+      modalOpcoesPresetInstancia.show();
+    }
+
+    function definirPresetPadrao() {
+      const p = window.presetsGlobais[idxPresetSelecionado];
+      localStorage.setItem('filtroPadraoRelatorio', p.nome);
+      modalOpcoesPresetInstancia.hide();
+      renderizarPresets(); // Re-renderiza para aplicar a borda grossa e a estrela
+      
+      // Se a tela de pendências estiver limpa, desenha o gráfico logo de cara
+      if (abaAtual === 'categorizar') renderizarListaCategorizar();
+    }
+
+    function excluirPresetPeloModal() {
+      const p = window.presetsGlobais[idxPresetSelecionado];
+      if (confirm(`Tem certeza que deseja excluir o atalho "${p.nome}" permanentemente?`)) {
+        modalOpcoesPresetInstancia.hide();
+        
+        // Limpa da memória caso o excluído fosse o padrão
+        if (localStorage.getItem('filtroPadraoRelatorio') === p.nome) {
+          localStorage.removeItem('filtroPadraoRelatorio');
+        }
+        
         const container = document.getElementById('containerPresetsRelatorio');
         container.innerHTML = '<div class="text-muted small fst-italic">Excluindo atalho...</div>';
         google.script.run
@@ -3590,6 +3642,149 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     });
     }
 
+  // --- LÓGICA DO GRÁFICO NA TELA DE PENDÊNCIAS (MINI GRÁFICO) ---
+    let chartMiniInstance = null;
+
+    function desenharGraficoPadraoNaCategorizacao() {
+      const nomePadrao = localStorage.getItem('filtroPadraoRelatorio');
+      if (!nomePadrao) return;
+      
+      // Checa se os presets já vieram do servidor. Se a aba carregou do zero, puxamos primeiro.
+      if (!window.presetsGlobais) {
+         google.script.run
+          .withSuccessHandler(res => {
+            window.presetsGlobais = res;
+            executarDesenhoMiniGrafico(nomePadrao);
+          })
+          .getPresetsServidor();
+      } else {
+         executarDesenhoMiniGrafico(nomePadrao);
+      }
+    }
+
+    function executarDesenhoMiniGrafico(nomePadrao) {
+      const p = window.presetsGlobais.find(x => x.nome === nomePadrao);
+      if (!p) return;
+
+      const container = document.getElementById('containerGraficoCategorizar');
+      if (container) container.classList.remove('d-none');
+      
+      document.getElementById('badgeTotalCategorizar').innerHTML = '<span class="spinner-border spinner-border-sm text-light"></span>';
+      
+      let dtIniStr = p.dtInicio;
+      let dtFimStr = p.dtFim;
+      let horaIniStr = p.hrInicio || '00:01';
+      let horaFimStr = p.hrFim || '23:59';
+      
+      if(!dtIniStr || !dtFimStr) return;
+
+      let pIni = dtIniStr.split('-');
+      let pFim = dtFimStr.split('-');
+      let hIni = horaIniStr.split(':');
+      let hFim = horaFimStr.split(':');
+      
+      let tsInicioBusca = new Date(pIni[0], pIni[1]-1, pIni[2], 0, 0, 0).getTime();
+      let tsFimBusca = new Date(pFim[0], pFim[1]-1, pFim[2], 23, 59, 59).getTime();
+      let tsInicioExato = new Date(pIni[0], pIni[1]-1, pIni[2], hIni[0], hIni[1], 0).getTime();
+      let tsFimExato = new Date(pFim[0], pFim[1]-1, pFim[2], hFim[0], hFim[1], 59).getTime();
+
+      google.script.run
+        .withSuccessHandler(dadosServidor => {
+           if (dadosServidor && dadosServidor.erro) return;
+           processarGraficoMini(dadosServidor, tsInicioExato, tsFimExato, p.usuario, p.categoria, parseFloat(p.target) || 0, p.nome);
+        })
+        .obterDadosRelatorioServidor(tsInicioBusca, tsFimBusca);
+    }
+
+    function processarGraficoMini(dadosCompletos, tsInicio, tsFim, user, catFiltro, meta, tituloFiltro) {
+      const dadosFiltrados = dadosCompletos.filter(item => {
+        if (!catFiltro || catFiltro === 'todas') return true;
+        const categoriasFiltro = catFiltro.split(',').map(c => c.trim());
+        return categoriasFiltro.includes(item.cat);
+      });
+
+      let somaTotal = 0;
+      dadosFiltrados.forEach(item => {
+        let valor = (user === 'Jerry') ? item.cotaJerry : ((user === 'Larissa') ? item.cotaLarissa : item.valor);
+        somaTotal += valor;
+      });
+
+      let labels = ['Início'];
+      let dadosMeta = [0];
+      let dadosAcumulados = [0];
+
+      let hojeTs = new Date().getTime();
+      let diasTotais = Math.round((tsFim - tsInicio) / (1000 * 60 * 60 * 24)) || 1;
+      let diasPassados = Math.round((hojeTs - tsInicio) / (1000 * 60 * 60 * 24));
+      if (diasPassados < 0) diasPassados = 0; 
+      if (diasPassados > diasTotais) diasPassados = diasTotais; 
+      
+      let mediaDiaria = somaTotal / (diasPassados > 0 ? diasPassados : 1);
+
+      for (let i = 1; i <= diasTotais; i++) {
+         let dAtual = new Date(tsInicio + (i * 24 * 60 * 60 * 1000));
+         labels.push(dAtual.getDate() + "/" + (dAtual.getMonth()+1));
+         dadosMeta.push((meta / diasTotais) * i);
+         dadosAcumulados.push(i <= diasPassados ? (mediaDiaria * i) : null);
+      }
+
+      document.getElementById('badgeTotalCategorizar').innerText = BRL.format(somaTotal);
+      
+      const elStatus = document.getElementById('statusMetaCategorizar');
+      if (meta > 0) {
+        let duracaoTotalMs = (tsFim - tsInicio) || 1;
+        let tempoDecorridoMs = Math.max(0, Math.min(hojeTs - tsInicio, duracaoTotalMs));
+        let metaProporcional = meta * (tempoDecorridoMs / duracaoTotalMs);
+        let diferenca = metaProporcional - somaTotal;
+        
+        if (diferenca >= 0) {
+          elStatus.innerHTML = `<span class="text-success"><i class="bi bi-graph-up-arrow"></i> Margem da Meta: +${BRL.format(diferenca)}</span>`;
+        } else {
+          elStatus.innerHTML = `<span class="text-danger"><i class="bi bi-graph-down-arrow"></i> Estourou a Meta: -${BRL.format(Math.abs(diferenca))}</span>`;
+        }
+      } else {
+         elStatus.innerText = "";
+      }
+
+      const ctx = document.getElementById('graficoCategorizar').getContext('2d');
+      if (chartMiniInstance) chartMiniInstance.destroy();
+
+      let colecoes = [{
+        label: 'Gasto',
+        data: dadosAcumulados,
+        borderColor: 'rgba(13, 110, 253, 1)',
+        backgroundColor: 'rgba(13, 110, 253, 0.15)',
+        fill: true,
+        tension: 0, pointRadius: 0, pointHitRadius: 15
+      }];
+
+      if (meta > 0) {
+        colecoes.push({
+          label: 'Meta',
+          data: dadosMeta,
+          borderColor: 'rgba(220, 53, 69, 1)',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0, borderWidth: 2
+        });
+      }
+
+      chartMiniInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: labels, datasets: colecoes },
+        options: {
+          responsive: true, maintainAspectRatio: false, events: [],
+          plugins: {
+            title: { display: true, text: tituloFiltro.toUpperCase(), color: '#6c757d', font: { size: 12, weight: 'bold' } },
+            legend: { display: false }, tooltip: { enabled: false }
+          },
+          scales: {
+            y: { ticks: { maxTicksLimit: 5, callback: val => 'R$ ' + val }, beginAtZero: true },
+            x: { grid: { display: false }, ticks: { maxTicksLimit: 4 } } 
+          }
+        }
+      });
+    }
   </script>
 
   <div class="modal fade" id="modalDesmembrar" tabindex="-1" aria-hidden="true">
@@ -3660,6 +3855,27 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
           <button type="button" class="btn btn-warning text-dark rounded-pill fw-bold flex-fill shadow-lg" id="btnConfirmarDesm" onclick="executarDesmembramento()">
             <i class="bi bi-check2-circle"></i> Confirmar Divisão
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="modalOpcoesPreset" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content rounded-4 border-0 shadow-lg bg-body">
+        <div class="modal-body p-4 text-center">
+          <h6 class="fw-bold mb-3 text-secondary" id="tituloOpcoesPreset">Opções do Atalho</h6>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-primary fw-bold rounded-pill shadow-sm" onclick="definirPresetPadrao()">
+              <i class="bi bi-star-fill me-1"></i> Definir como Padrão
+            </button>
+            <button type="button" class="btn btn-outline-danger fw-bold rounded-pill" onclick="excluirPresetPeloModal()">
+              <i class="bi bi-trash-fill me-1"></i> Excluir Atalho
+            </button>
+            <button type="button" class="btn btn-light fw-bold rounded-pill text-muted mt-2 border" data-bs-dismiss="modal">
+              Cancelar
+            </button>
+          </div>
         </div>
       </div>
     </div>
