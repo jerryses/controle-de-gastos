@@ -861,7 +861,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     // Categorias
     const categorias = [
       "🍽️ comer fora", "🍺 alcool", "🛒 mercado", "🏠 moradia", "🚘 carro", "🧳 viagens", 
-      "🎓 educacao", "🛍️ compras", "⛽️ posto de combustivel", "🌇 uso do carro em PMW","🌁 uso do carro em SJC",
+      "🎓 educacao", "🛍️ compras", "⛽️ posto (abastecimento)", "🌇 transporte em PMW","🌁 transporte em SJC",
       "💊 saude", "⚽️ entretenimento", "🐈 gato", "👕 roupas e estética", "🎁 presente", "🛩 viagem SJC embraer", 
       "👨‍👩‍👧 família Larissa", "📱 telefone", "🌻 viagens SJC<>PMW", "💰 emprestimo" 
     ];
@@ -2445,8 +2445,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
         }
       }
       
-      const htmlJerry = item.cotaJerry > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
-      const htmlLarissa = item.cotaLarissa > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
+      const htmlJerry = Math.abs(item.cotaJerry) > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
+      const htmlLarissa = Math.abs(item.cotaLarissa) > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
       const textoCategoria = item.cat ? item.cat : '<span class="text-danger fst-italic">⚠️ Sem categoria</span>';
       const horarioDisplay = item.horario ? `<div class="text-secondary mt-1"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
       const badgeLixeira = item.isLixeira ? '<div class="mb-2"><span class="badge bg-danger shadow-sm px-2 py-1"><i class="bi bi-trash"></i> Da Lixeira</span></div>' : '';
@@ -2534,8 +2534,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       const lista = document.getElementById('listaDespesasJerry');
       if (!lista || !historicoGlobal) return;
       let html = "";
-      // Filtra apenas gastos onde a cota do Jerry é maior que 0.01
-      const filtrados = historicoGlobal.filter(item => item.cotaJerry > 0.01);
+      // Filtra gastos onde a cota do Jerry é diferente de zero (positiva ou negativa)
+      const filtrados = historicoGlobal.filter(item => Math.abs(item.cotaJerry) > 0.01);
       const limite = Math.min(filtrados.length, 150); 
       for (let i = 0; i < limite; i++) {
         html += montarCardGastoHtml(filtrados[i], i);
@@ -2680,8 +2680,8 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
         }
       }
 
-      const htmlJerry = item.cotaJerry > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
-      const htmlLarissa = item.cotaLarissa > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
+      const htmlJerry = Math.abs(item.cotaJerry) > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
+      const htmlLarissa = Math.abs(item.cotaLarissa) > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
       const textoCategoria = item.cat ? item.cat : '<span class="text-danger fst-italic">⚠️ Sem categoria</span>';
       const horarioDisplay = item.horario ? `<div class="text-secondary mt-1"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
       
