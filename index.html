@@ -45,13 +45,13 @@
               // Intercepta a chamada da função (ex: salvarGasto)
               return function(...args) {
                 fetch(API_URL, {
-                  redirect: "follow", // Força o Chrome a seguir o roteamento do Google
+                  redirect: "follow",
                   method: 'POST',
-                  // Apagamos a linha "headers" inteira de propósito!
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                   body: JSON.stringify({ 
                     action: prop, 
                     args: args,
-                    pin: localStorage.getItem('meuPinSecreto') 
+                    pin: localStorage.getItem('meuPinSecreto') ? localStorage.getItem('meuPinSecreto').trim() : ''
                   })
                 })
                 .then(res => res.json())
@@ -2617,8 +2617,10 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
         })
 
         .withFailureHandler(function(err) {
-           // NOVO: Exibe o erro real na tela em vez de ficar carregando para sempre
-           listaHistorico.innerHTML = `<div class='alert alert-danger mt-3'>Erro ao conectar: ${err}</div>`;
+           const msgErro = `<div class='alert alert-danger mt-3 fw-bold text-center'>Erro ao conectar:<br>${err}</div>`;
+           if (document.getElementById('listaHistorico')) document.getElementById('listaHistorico').innerHTML = msgErro;
+           if (document.getElementById('listaCategorizar')) document.getElementById('listaCategorizar').innerHTML = msgErro;
+           if (document.getElementById('listaUltimasEditadas')) document.getElementById('listaUltimasEditadas').innerHTML = msgErro;
         })
         .getDashboardData();
       
@@ -3788,102 +3790,73 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
 
 
   <script>
-  // Ao carregar a página, checa se o PIN já está salvo
-  document.addEventListener("DOMContentLoaded", function() {
-    if (!localStorage.getItem('meuPinSecreto')) {
-      const senhaDigitada = prompt("Aplicativo bloqueado. Digite a senha de acesso:");
-      if (senhaDigitada) {
-        localStorage.setItem('meuPinSecreto', senhaDigitada);
-        // Opcional: recarrega a página após salvar
-        location.reload(); 
-      } else {
-        // Se cancelar, esconde o corpo do app
-        document.body.style.display = 'none';
-      }
-    }
-  });
-</script>
+    // 1. TELA DE BLOQUEIO ÚNICA E DEFINITIVA
+    document.addEventListener("DOMContentLoaded", function() {
+      const pinSalvo = localStorage.getItem('meuPinSecreto');
+      const donoSalvo = localStorage.getItem('donoDoAparelho');
 
-
-
-
-<script>
-  // 1. TELA DE BLOQUEIO E IDENTIFICAÇÃO DEFINITIVA DO DONO
-  document.addEventListener("DOMContentLoaded", function() {
-    const pinSalvo = localStorage.getItem('meuPinSecreto');
-    const donoSalvo = localStorage.getItem('donoDoAparelho');
-
-    if (!pinSalvo || !donoSalvo) {
-      const senhaDigitada = prompt("Aplicativo bloqueado. Digite sua senha de acesso:");
-      if (senhaDigitada) {
-        
-        // Mude as senhas abaixo para combinar com o Backend
-        const PIN_JERRY = "conectaloemos2020jerry";
-        const PIN_LARISSA = "conectaloemos2020lari";
-        
-        let donoReal = "";
-        if (senhaDigitada === PIN_JERRY) donoReal = "Jerry";
-        else if (senhaDigitada === PIN_LARISSA) donoReal = "Larissa";
-        
-        if (donoReal) {
-          localStorage.setItem('meuPinSecreto', senhaDigitada);
-          localStorage.setItem('donoDoAparelho', donoReal); // Crava o dono real do celular
-          alert(`Bem-vindo(a) ao seu aplicativo, ${donoReal}!`);
-          location.reload(); 
+      if (!pinSalvo || !donoSalvo) {
+        const senhaDigitada = prompt("Aplicativo bloqueado. Digite sua senha de acesso:");
+        if (senhaDigitada) {
+          
+          const PIN_JERRY = "conectaloemos2020jerry";
+          const PIN_LARISSA = "conectaloemos2020lari";
+          
+          let donoReal = "";
+          const senhaLimpa = senhaDigitada.trim(); // Remove espaços acidentais do teclado
+          
+          if (senhaLimpa === PIN_JERRY) donoReal = "Jerry";
+          else if (senhaLimpa === PIN_LARISSA) donoReal = "Larissa";
+          
+          if (donoReal) {
+            localStorage.setItem('meuPinSecreto', senhaLimpa);
+            localStorage.setItem('donoDoAparelho', donoReal);
+            alert(`Bem-vindo(a) ao seu aplicativo, ${donoReal}!`);
+            location.reload(); 
+          } else {
+            alert("Senha incorreta!");
+            document.body.style.display = 'none';
+          }
         } else {
-          alert("Senha incorreta!");
           document.body.style.display = 'none';
         }
       } else {
-        document.body.style.display = 'none';
+        iniciarMonitoramento();
       }
-    } else {
-      // Se a senha já está salva, inicia o radar
-      iniciarMonitoramento();
-    }
-  });
+    });
 
-  // 2. SISTEMA DE ATUALIZAÇÃO EM TEMPO REAL (POLLING)
-  let localLastUpdate = 0;
-  
-  function iniciarMonitoramento() {
-    setInterval(async () => {
-      try {
-        const res = await fetch(API_URL + "?t=" + new Date().getTime());
-        const data = await res.json();
-        
-        if (localLastUpdate === 0) {
-          localLastUpdate = data.lastUpdate; 
-          return;
-        }
-        
-        if (data.lastUpdate > localLastUpdate) {
-          // Puxa o verdadeiro dono do celular validado pela senha
-          const donoReal = localStorage.getItem('donoDoAparelho') || 'Desconhecido';
+    // 2. SISTEMA DE ATUALIZAÇÃO EM TEMPO REAL (POLLING)
+    let localLastUpdate = 0;
+    
+    function iniciarMonitoramento() {
+      setInterval(async () => {
+        try {
+          const res = await fetch(API_URL + "?t=" + new Date().getTime());
+          const data = await res.json();
           
-          // Só recarrega a tela se a edição no servidor foi feita pela OUTRA pessoa
-          if (data.lastUser !== donoReal && data.lastUser !== "Nenhum") {
-            
-            const navTitulo = document.getElementById('tituloAbaAtual');
-            if (navTitulo) {
-              const tituloOriginal = navTitulo.innerHTML;
-              navTitulo.innerHTML = '<i class="bi bi-cloud-arrow-down-fill text-success me-2"></i>Atualizando...';
-              setTimeout(() => { navTitulo.innerHTML = tituloOriginal; }, 3000);
-            }
-            
-            if (typeof carregarDashboard === 'function') {
-              carregarDashboard();
-            }
+          if (localLastUpdate === 0) {
+            localLastUpdate = data.lastUpdate; 
+            return;
           }
           
-          localLastUpdate = data.lastUpdate;
+          if (data.lastUpdate > localLastUpdate) {
+            const donoReal = localStorage.getItem('donoDoAparelho') || 'Desconhecido';
+            if (data.lastUser !== donoReal && data.lastUser !== "Nenhum") {
+              const navTitulo = document.getElementById('tituloAbaAtual');
+              if (navTitulo) {
+                const tituloOriginal = navTitulo.innerHTML;
+                navTitulo.innerHTML = '<i class="bi bi-cloud-arrow-down-fill text-success me-2"></i>Atualizando...';
+                setTimeout(() => { navTitulo.innerHTML = tituloOriginal; }, 3000);
+              }
+              if (typeof carregarDashboard === 'function') carregarDashboard();
+            }
+            localLastUpdate = data.lastUpdate;
+          }
+        } catch (err) {
+          console.log("Erro no monitoramento: ", err);
         }
-      } catch (err) {
-        console.log("Erro no monitoramento: ", err);
-      }
-    }, 15000); // 15000 = 15 segundos
-  }
-</script>
-  
+      }, 15000); 
+    }
+  </script>
 </body>
 </html>
