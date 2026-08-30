@@ -43,18 +43,22 @@
               if (prop in target) return target[prop];
               
               // Intercepta a chamada da função (ex: salvarGasto)
-              return function(...args) {
-                fetch(API_URL, {
-                  redirect: "follow",
-                  method: 'POST',
-                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify({ 
-                    action: prop, 
-                    args: args,
-                    pin: localStorage.getItem('meuPinSecreto') ? localStorage.getItem('meuPinSecreto').trim() : ''
-                  })
-                })
-                .then(res => res.json())
+                  return function(...args) {
+                    const currentPin = localStorage.getItem('meuPinSecretoApp') || '';
+                    const payloadBody = JSON.stringify({ 
+                      action: prop, 
+                      args: args,
+                      pin: currentPin.trim()
+                    });
+
+                    fetch(API_URL, {
+                      cache: "no-store",
+                      redirect: "follow",
+                      method: 'POST',
+                      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                      body: payloadBody
+                    })
+                    .then(res => res.json())
                 .then(data => {
                   if (data.sucesso && successHandler) successHandler(data.retorno);
                   else if (!data.sucesso && failureHandler) failureHandler(data.erro);
@@ -3792,28 +3796,28 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
   <script>
     // 1. TELA DE BLOQUEIO ÚNICA E DEFINITIVA
     document.addEventListener("DOMContentLoaded", function() {
-      const pinSalvo = localStorage.getItem('meuPinSecreto');
-      const donoSalvo = localStorage.getItem('donoDoAparelho');
+          const pinSalvo = localStorage.getItem('meuPinSecretoApp');
+          const donoSalvo = localStorage.getItem('donoDoAparelho');
 
-      if (!pinSalvo || !donoSalvo) {
-        const senhaDigitada = prompt("Aplicativo bloqueado. Digite sua senha de acesso:");
-        if (senhaDigitada) {
-          
-          const PIN_JERRY = "conectaloemos2020jerry";
-          const PIN_LARISSA = "conectaloemos2020lari";
-          
-          let donoReal = "";
-          const senhaLimpa = senhaDigitada.trim(); // Remove espaços acidentais do teclado
-          
-          if (senhaLimpa === PIN_JERRY) donoReal = "Jerry";
-          else if (senhaLimpa === PIN_LARISSA) donoReal = "Larissa";
-          
-          if (donoReal) {
-            localStorage.setItem('meuPinSecreto', senhaLimpa);
-            localStorage.setItem('donoDoAparelho', donoReal);
-            alert(`Bem-vindo(a) ao seu aplicativo, ${donoReal}!`);
-            location.reload(); 
-          } else {
+          if (!pinSalvo || !donoSalvo) {
+            const senhaDigitada = prompt("Aplicativo bloqueado. Digite sua senha de acesso:");
+            if (senhaDigitada) {
+              
+              const PIN_JERRY = "conectaloemos2020jerry";
+              const PIN_LARISSA = "conectaloemos2020lari";
+              
+              let donoReal = "";
+              const senhaLimpa = senhaDigitada.trim(); // Remove espaços acidentais do teclado
+              
+              if (senhaLimpa === PIN_JERRY) donoReal = "Jerry";
+              else if (senhaLimpa === PIN_LARISSA) donoReal = "Larissa";
+              
+              if (donoReal) {
+                localStorage.setItem('meuPinSecretoApp', senhaLimpa);
+                localStorage.setItem('donoDoAparelho', donoReal);
+                alert(`Bem-vindo(a) ao seu aplicativo, ${donoReal}!`);
+                location.reload(); 
+              } else {
             alert("Senha incorreta!");
             document.body.style.display = 'none';
           }
