@@ -45,12 +45,12 @@
               // Intercepta a chamada da função (ex: salvarGasto)
               return function(...args) {
                 fetch(API_URL, {
+                  redirect: "follow", // Força o Chrome a seguir o roteamento do Google
                   method: 'POST',
-                  headers: { 'Content-Type': 'text/plain' },
+                  // Apagamos a linha "headers" inteira de propósito!
                   body: JSON.stringify({ 
                     action: prop, 
                     args: args,
-                    // Envia silenciosamente o PIN salvo no aparelho
                     pin: localStorage.getItem('meuPinSecreto') 
                   })
                 })
