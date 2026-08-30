@@ -2773,14 +2773,13 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       const htmlJerry = Math.abs(item.cotaJerry) > 0.01 ? `<div>👦🏻 ${BRL.format(item.cotaJerry)}</div>` : '';
       const htmlLarissa = Math.abs(item.cotaLarissa) > 0.01 ? `<div>👱🏻‍♀️ ${BRL.format(item.cotaLarissa)}</div>` : '';
       const textoCategoria = item.cat ? item.cat : '<span class="text-danger fst-italic">⚠️ Sem categoria</span>';
-      const horarioDisplay = item.horario ? `<div class="text-secondary mt-1"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
+      const horarioDisplay = item.horario ? `<div class="text-secondary" style="margin-top: 2px;"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
       
       const isDesmembrado = item.motivo === "DESMEMBRADO";
       const iconeExclusao = isDesmembrado ? "bi-layout-split" : "bi-trash-fill";
       const textoExclusao = isDesmembrado ? "Desmembrado em:" : "Excluído em:";
       const corExclusao = isDesmembrado ? "text-warning" : "text-danger";
       
-      const horarioDisplay = item.horario ? `<div class="text-secondary" style="margin-top: 2px;"><i class="bi bi-clock"></i> ${item.horario.substring(0, 5)}</div>` : '';
       const dataExclusaoLabel = item.dataExclusao ? `<div class="${corExclusao} small fw-bold mb-1"><i class="bi ${iconeExclusao} me-1"></i> ${textoExclusao} ${item.dataExclusao}</div>` : '';
 
       return `
