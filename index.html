@@ -2577,12 +2577,14 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
     }
 
 
-    function carregarDashboard() {
+    function carregarDashboard(modoSilencioso = false) {
       const listaHistorico = document.getElementById('listaHistorico');
       const listaCategorizar = document.getElementById('listaCategorizar');
       
-      listaHistorico.innerHTML = "<div class='text-center'>Carregando...</div>";
-      if (listaCategorizar) listaCategorizar.innerHTML = "<div class='text-center'>Carregando...</div>";
+      if (!modoSilencioso) {
+        listaHistorico.innerHTML = "<div class='text-center'>Carregando...</div>";
+        if (listaCategorizar) listaCategorizar.innerHTML = "<div class='text-center'>Carregando...</div>";
+      }
       
       google.script.run
         .withSuccessHandler(function(dados) {
@@ -2610,9 +2612,11 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
           } else if (abaAtual === 'ultimasEditadas') {
             renderizarListaUltimasEditadas();
           } else {
-            listaHistorico.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
-            const listaUlt = document.getElementById('listaUltimasEditadas');
-            if (listaUlt) listaUlt.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
+            if (!modoSilencioso) {
+              if (listaHistorico) listaHistorico.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
+              const listaUlt = document.getElementById('listaUltimasEditadas');
+              if (listaUlt) listaUlt.innerHTML = "<div class='text-center mt-3 text-muted fst-italic'><div class='spinner-border spinner-border-sm me-2'></div>Carregando layout...</div>";
+            }
           }
 
           // Renderiza a lista de categorizar respeitando o filtro ativo (Todos, Jerry ou Larissa)
@@ -3852,7 +3856,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
                 navTitulo.innerHTML = '<i class="bi bi-cloud-arrow-down-fill text-success me-2"></i>Atualizando...';
                 setTimeout(() => { navTitulo.innerHTML = tituloOriginal; }, 3000);
               }
-              if (typeof carregarDashboard === 'function') carregarDashboard();
+              if (typeof carregarDashboard === 'function') carregarDashboard(true);
             }
             localLastUpdate = data.lastUpdate;
           }
