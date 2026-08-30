@@ -2550,7 +2550,7 @@ data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" title="Mudar seleçã
       if (!lista || !historicoGlobal) return;
       let html = "";
       // Filtra apenas gastos onde a cota da Larissa é maior que 0.01
-      const filtrados = historicoGlobal.filter(item => item.cotaLarissa > 0.01);
+      const filtrados = historicoGlobal.filter(item => Math.abs(item.cotaLarissa) > 0.01);
       const limite = Math.min(filtrados.length, 150);
       for (let i = 0; i < limite; i++) {
         html += montarCardGastoHtml(filtrados[i], i);
