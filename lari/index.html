@@ -37,15 +37,23 @@
       }
     }
 
-    /* Começa invisível para não mostrar a tela branca intermediária do Google */
+    /* Trava rígida contra o flash branco do motor WebKit (iOS) */
     iframe {
       width: 100%;
       height: 100%;
       border: none;
       display: block;
-      background-color: #121212;
+      background-color: #121212 !important;
       opacity: 0;
-      transition: opacity 0.3s ease-in-out;
+      visibility: hidden;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      transition: opacity 0.35s ease-in-out;
+    }
+
+    iframe.visivel {
+      opacity: 1 !important;
+      visibility: visible !important;
     }
   </style>
 </head>
@@ -57,21 +65,22 @@
   </iframe>
 
   <script>
-    // Revela o iframe com transição suave apenas quando o app interno estiver renderizado no modo dark
+    function exibirIframeSuave() {
+      const frame = document.getElementById("appFrame");
+      if (frame && !frame.classList.contains("visivel")) {
+        frame.classList.add("visivel");
+      }
+    }
+
+    // Ouve a notificação enviada do interior do Google Apps Script
     window.addEventListener("message", function(e) {
       if (e.data === "appPronto") {
-        const frame = document.getElementById("appFrame");
-        if (frame) frame.style.opacity = "1";
+        exibirIframeSuave();
       }
     });
 
-    // Fallback de segurança: se a mensagem atrasar por conexão lenta, exibe após 2.5s
-    setTimeout(function() {
-      const frame = document.getElementById("appFrame");
-      if (frame && frame.style.opacity !== "1") {
-        frame.style.opacity = "1";
-      }
-    }, 2500);
+    // Fallback de segurança: se a rede atrasar, exibe após 3.5s
+    setTimeout(exibirIframeSuave, 3500);
   </script>
 </body>
 </html>
