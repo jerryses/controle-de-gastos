@@ -5,17 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Controle de Gastos - Larissa</title>
 
-  <!-- Aponta para o manifest da subpasta -->
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#ffffff">
-
-  <!-- Aponta para os ícones na raiz -->
-  <link rel="icon" type="image/png" sizes="192x192" href="../icon-192_.png">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192_.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="../icon-192_.png">
+  <link rel="apple-touch-icon" href="icon-192_.png">
 
   <style>
+    :root {
+      color-scheme: light dark;
+    }
+
     * {
       box-sizing: border-box;
     }
@@ -29,16 +31,47 @@
       background-color: #ffffff;
     }
 
+    @media (prefers-color-scheme: dark) {
+      html, body {
+        background-color: #121212 !important;
+      }
+    }
+
+    /* Começa invisível para não mostrar a tela branca intermediária do Google */
     iframe {
       width: 100%;
       height: 100%;
       border: none;
       display: block;
+      background-color: transparent;
+      opacity: 0;
+      transition: opacity 0.25s ease-in-out;
     }
   </style>
 </head>
 <body>
-  <!-- URL do Apps Script com ?u=lari -->
-  <iframe src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=lari"></iframe>
+  <iframe 
+    id="appFrame"
+    src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=lari" 
+    allowtransparency="true">
+  </iframe>
+
+  <script>
+    // Revela o iframe com transição suave apenas quando o app interno estiver renderizado no modo dark
+    window.addEventListener("message", function(e) {
+      if (e.data === "appPronto") {
+        const frame = document.getElementById("appFrame");
+        if (frame) frame.style.opacity = "1";
+      }
+    });
+
+    // Fallback de segurança: se a mensagem atrasar por conexão lenta, exibe após 2.5s
+    setTimeout(function() {
+      const frame = document.getElementById("appFrame");
+      if (frame && frame.style.opacity !== "1") {
+        frame.style.opacity = "1";
+      }
+    }, 2500);
+  </script>
 </body>
 </html>
