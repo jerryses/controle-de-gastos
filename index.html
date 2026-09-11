@@ -33,7 +33,11 @@
 
     @media (prefers-color-scheme: dark) {
       html, body {
-        background-color: #121212;
+        background-color: #121212 !important;
+      }
+      iframe {
+        background-color: #121212 !important;
+        color-scheme: dark;
       }
     }
 
@@ -42,10 +46,11 @@
       height: 100%;
       border: none;
       display: block;
+      background-color: #ffffff;
     }
   </style>
 </head>
 <body>
-  <iframe src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=jerry"></iframe>
+  <iframe src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=jerry" allowtransparency="true" style="background-color: transparent;"></iframe>
 </body>
 </html>
