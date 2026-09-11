@@ -6,13 +6,18 @@
   <title>Controle de Gastos</title>
 
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <style>
+    :root {
+      color-scheme: light dark;
+    }
+
     * {
       box-sizing: border-box;
     }
@@ -24,6 +29,12 @@
       height: 100%;
       overflow: hidden;
       background-color: #ffffff;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html, body {
+        background-color: #121212;
+      }
     }
 
     iframe {
