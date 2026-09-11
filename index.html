@@ -53,8 +53,25 @@
   <iframe 
     id="appFrame"
     src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=jerry" 
-    allowtransparency="true" 
-    onload="this.style.opacity='1';">
+    allowtransparency="true">
   </iframe>
+
+  <script>
+    // Revela o iframe com transição suave apenas quando o app interno estiver renderizado no modo dark
+    window.addEventListener("message", function(e) {
+      if (e.data === "appPronto") {
+        const frame = document.getElementById("appFrame");
+        if (frame) frame.style.opacity = "1";
+      }
+    });
+
+    // Fallback de segurança: se a mensagem atrasar por conexão lenta, exibe após 2.5s
+    setTimeout(function() {
+      const frame = document.getElementById("appFrame");
+      if (frame && frame.style.opacity !== "1") {
+        frame.style.opacity = "1";
+      }
+    }, 2500);
+  </script>
 </body>
 </html>
