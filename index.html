@@ -2,48 +2,61 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Meu Web App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Controle de Gastos</title>
 
-  <!-- Chama o manifest para Android -->
   <link rel="manifest" href="manifest.json">
-  
-  <!-- Define a cor da barra de status no Android -->
   <meta name="theme-color" content="#ffffff">
-
-  <!-- Ícone que aparece na barra de endereço e no celular -->
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 
-  <!-- Tags obrigatórias para funcionar como app nativo no iPhone (iOS) -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icon-192.png">
-
   <style>
-    body, html {
+    /* 
+      CALIBRAGEM DO TOPO:
+      Se cortar o cabeçalho: diminua (ex: 36px, 34px).
+      Se a barra cinza aparecer: aumente (ex: 38px, 40px).
+    */
+    :root {
+      --altura-aviso: 36px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
+      height: 100dvh; /* dvh garante a altura real no Android */
+      height: 100vh;  /* Fallback */
+      overflow: hidden;
+      background-color: #ffffff;
+    }
+
+    .iframe-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #ffffff; /* Cor de fundo para evitar piscos ao carregar */
     }
-    .iframe-container {
-      width: 100vw;
-      height: 100vh;
-      overflow: hidden;
-    }
+
     iframe {
       width: 100%;
-      /* O valor padrão da barra costuma ser 36px a 55px. Ajuste esse número se necessário */
-      height: calc(100vh + 40px); 
-      margin-top: -40px; 
+      /* Soma a altura da tela útil com a fatia oculta */
+      height: calc(100dvh + var(--altura-aviso));
+      /* Desloca para cima exatamente a medida da barra */
+      margin-top: calc(-1 * var(--altura-aviso));
       border: none;
+      display: block;
+      /* Assegura rolagem nativa suave no Android */
+      -webkit-overflow-scrolling: touch;
     }
   </style>
 </head>
 <body>
-  <div class="iframe-container">
-    <!-- Substitua pelo link final da sua implantação do Apps Script (terminado em /exec) -->
+  <div class="iframe-wrapper">
     <iframe src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=jerry"></iframe>
   </div>
 </body>
