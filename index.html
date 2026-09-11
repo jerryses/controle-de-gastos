@@ -8,17 +8,11 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icon-192.png">
 
   <style>
-    /* 
-      CALIBRAGEM DO TOPO:
-      Se cortar o cabeçalho: diminua (ex: 36px, 34px).
-      Se a barra cinza aparecer: aumente (ex: 38px, 40px).
-    */
-    :root {
-      --altura-aviso: 3px;
-    }
-
     * {
       box-sizing: border-box;
     }
@@ -27,37 +21,20 @@
       margin: 0;
       padding: 0;
       width: 100%;
-      height: 100dvh; /* dvh garante a altura real no Android */
-      height: 100vh;  /* Fallback */
+      height: 100%;
       overflow: hidden;
       background-color: #ffffff;
     }
 
-    .iframe-wrapper {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
-
     iframe {
       width: 100%;
-      /* Soma a altura da tela útil com a fatia oculta */
-      height: calc(100dvh + var(--altura-aviso));
-      /* Desloca para cima exatamente a medida da barra */
-      margin-top: calc(-1 * var(--altura-aviso));
+      height: 100%;
       border: none;
       display: block;
-      /* Assegura rolagem nativa suave no Android */
-      -webkit-overflow-scrolling: touch;
     }
   </style>
 </head>
 <body>
-  <div class="iframe-wrapper">
-    <iframe src="https://script.google.com/macros/s/AKfycbwfeWicwMXqOshR4ZhuRQ_569kzNyjtx9UARJBJo8xibjI-Q6fNukDucOkGDRuQzCVF/exec?u=jerry"></iframe>
-  </div>
+  <iframe src="https://script.google.com/macros/s/SEU_ID/exec?u=jerry"></iframe>
 </body>
 </html>
