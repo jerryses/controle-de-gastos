@@ -3,8 +3,7 @@
   "short_name": "Gastos",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#121212",
   "icons": [
     {
       "src": "icon-192.png",
